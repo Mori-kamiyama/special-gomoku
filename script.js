@@ -1029,6 +1029,7 @@ function changeDeck(id, d, tileEl) {
 }
 
 function bump(el, why) {
+  Sound.deny();
   for (const t of [el, $('deck-meter')]) {
     if (!t) continue;
     t.classList.remove('is-bump'); void t.offsetWidth; t.classList.add('is-bump');
@@ -1279,7 +1280,7 @@ function selectCard(i) {
   if (state.phase !== 'play' || notMine(state.turn) || state.cpuThinking) return;
   if (i < 0 || i >= state.players[state.turn].hand.length) return;
   const card = state.players[state.turn].hand[i];
-  if (cardBlocked(card, state.turn)) { const el = $(`panel-${state.turn}`).querySelectorAll('.hand-piece')[i]; if (el) { el.classList.remove('is-bump'); void el.offsetWidth; el.classList.add('is-bump'); } return; }
+  if (cardBlocked(card, state.turn)) { Sound.deny(); const el = $(`panel-${state.turn}`).querySelectorAll('.hand-piece')[i]; if (el) { el.classList.remove('is-bump'); void el.offsetWidth; el.classList.add('is-bump'); } return; }
   if (state.selected !== i) Sound.select();
   state.selected = i;
   renderPanel(state.turn);
@@ -1369,7 +1370,7 @@ async function place(x, y, remote = false) {
     const st = cellEl(x, y).querySelector('.stone');
     if (st) st.classList.add('is-charging');
     FX.anticipate(t, res.ability, x, y, { area });
-    Sound.charge(FX.elementOf(res.ability), FX.anticipationOf(res.ability));
+    Sound.charge(FX.elementOf(res.ability), FX.anticipationOf(res.ability), res.ability);
     await sleep(FX.anticipationOf(res.ability) * 1000);
     Sound.ability(res.ability);
   }
@@ -1655,6 +1656,8 @@ function init() {
     d.addEventListener('click', (e) => { if (e.target === d) d.close(); });
   }
   document.addEventListener('keydown', onKey);
+  // 最初に触ったときに、録音の素材を読み込んでおく（ブラウザは触る前に音を鳴らせない）
+  document.addEventListener('pointerdown', () => Sound.preload(), { once: true });
   // 盤の外をタップしたら、選んでいたマスを取り消す
   document.addEventListener('pointerdown', (e) => {
     if (state.pending && !e.target.closest('.board') && !e.target.closest('.hand')) {

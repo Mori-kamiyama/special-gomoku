@@ -1,0 +1,19 @@
+Breaking / falling / hit sfx (bfh1_*): CC0
+https://opengameart.org/content/75-cc0-breaking-falling-hit-sfx
+
+Interface Sounds by Kenney: CC0
+https://opengameart.org/content/interface-sounds
+
+Versilian Community Sample Library (vc_*): CC0
+https://github.com/sgossner/VCSL
+
+150 combat sound effects (el_*, ex_crunch*, ex_blast*, nk_low*, nk_retro, nk_crunch4, ch_*): CC0
+https://opengameart.org/content/150-combat-sound-effects
+25 CC0 bang / firework sfx (ex_bang*, ex_cannon*): CC0
+https://opengameart.org/content/25-cc0-bang-firework-sfx
+100 CC0 SFX (cc_*): CC0
+https://opengameart.org/content/100-cc0-sfx
+OpenGameArt CC0 explosions (ex_oga*, ex_chunky, ex_dull, ex_plain, ex_cannonhit, nk_far, nk_muffled): CC0
+https://opengameart.org/content/explosions-4 ほか
+Electricity game sound pack (ex_deathboom, el_groundhit): CC0
+https://opengameart.org/content/electricity-game-sound-pack

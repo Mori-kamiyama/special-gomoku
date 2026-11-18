@@ -1,0 +1,21 @@
+Breaking / falling / hit sfx (bfh1_*): CC0
+https://opengameart.org/content/75-cc0-breaking-falling-hit-sfx
+
+Interface Sounds by Kenney: CC0
+https://opengameart.org/content/interface-sounds
+
+Versilian Community Sample Library (vc_*): CC0
+https://github.com/sgossner/VCSL
+150 combat sound effects (ex_blast*, el_*): CC0
+https://opengameart.org/content/150-combat-sound-effects
+25 CC0 bang / firework sfx (ex_bang*): CC0
+https://opengameart.org/content/25-cc0-bang-firework-sfx
+100 CC0 SFX (cc_*): CC0
+https://opengameart.org/content/100-cc0-sfx
+Chunky Explosion (ex_chunky): CC0
+https://opengameart.org/content/chunky-explosion
+VCSL (vc_cajon_fff, vc_slit_hi): CC0  https://github.com/sgossner/VCSL
+100 CC0 SFX (cc_metal_05, cc_paper_01): CC0  https://opengameart.org/content/100-cc0-sfx
+VCSL (vc_cajon_f, vc_frame_muted, vc_gong_mf): CC0  https://github.com/sgossner/VCSL
+100 CC0 SFX (cc_slam_03, cc_wooden_02, cc_noise_01): CC0  https://opengameart.org/content/100-cc0-sfx
+150 combat sound effects (ch_retrochargestereoup01, el_emp*, el_ice5, el_energyzap): CC0  https://opengameart.org/content/150-combat-sound-effects
