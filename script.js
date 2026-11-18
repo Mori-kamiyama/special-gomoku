@@ -485,7 +485,7 @@ const deckList = (deck) => Object.keys(deck).sort().flatMap((id) => Array(deck[i
 const STARTERS = [
   { id: 'balance', name: 'バランス', note: 'いろいろ少しずつ', deck: { plain: 8, bomb: 1, spin: 1, grow: 1, seal: 1, clone: 1 } },
   { id: 'mass', name: '物量', note: '数で押す', deck: { plain: 14, gravity: 2, mine: 2, shield: 1 } },
-  { id: 'bomber', name: '爆弾魔', note: '消して、消して、消す', deck: { plain: 5, bomb: 3, rowBomb: 1, colBomb: 1, diagBomb: 1 } },
+  { id: 'sourspy', name: 'すっぱいスパイ', note: '相手の列にまぎれこむ', deck: { plain: 6, joker: 3, bomb: 1, spy: 3 } },
   { id: 'nuclear', name: '一発逆転', note: '核が2つ。置けるのは9つだけ', deck: { plain: 6, nuke: 2, square: 1 } },
 ];
 
@@ -818,13 +818,22 @@ function confirmSelect() {
   const mine = deckByRef(state.choice.b);
   if (!mine) return;
   saveChoice(state.choice);
-  if (state.mode === 'pvp') { state.decks = { b: mine.deck, w: deckByRef(state.choice.w).deck }; startGame(); return; }
+  if (state.mode === 'pvp') {
+    const theirs = deckByRef(state.choice.w);
+    state.decks = { b: mine.deck, w: theirs.deck };
+    state.deckNames = { b: mine.name, w: theirs.name };
+    startGame();
+    return;
+  }
   if (state.mode === 'cpu') {
-    state.decks = { b: mine.deck, w: STARTERS[Math.floor(Math.random() * STARTERS.length)].deck };
+    const cpu = STARTERS[Math.floor(Math.random() * STARTERS.length)];
+    state.decks = { b: mine.deck, w: cpu.deck };
+    state.deckNames = { b: mine.name, w: cpu.name };
     startGame();
     return;
   }
   state.myDeck = mine.deck;
+  state.myDeckName = mine.name;
   startOnline();
 }
 
@@ -1247,7 +1256,9 @@ function renderPanel(color) {
       <span class="thinking" aria-hidden="true"><i></i><i></i><i></i></span>
       ${sealed ? '<span class="tag">封印中</span>' : ''}
       <span class="bag-info">のこり${piecesLeft(p)}個</span>
+      ${state.deckNames && state.deckNames[color] ? `<span class="player-deck">${escapeHTML(state.deckNames[color])}</span>` : ''}
     </div>
+
     <div class="hand ${turnStart ? 'is-turn-start' : ''}" role="radiogroup" aria-label="${COLOR_NAME[color]}の手札">
       ${p.hand.map((c, i) => {
         const ab = ABILITIES[c.ability];
@@ -1492,10 +1503,10 @@ async function startOnline() {
       const seed = newSeed();
       const myColor = Math.random() < 0.5 ? 'b' : 'w';
       Net.send('start', { seed, guestColor: other(myColor) });
-      Net.send('deck', { deck: state.myDeck });
+      Net.send('deck', { deck: state.myDeck, name: state.myDeckName });
       beginOnline(seed, myColor);
     } else {
-      Net.send('deck', { deck: state.myDeck });
+      Net.send('deck', { deck: state.myDeck, name: state.myDeckName });
       Net.once('start', (d) => beginOnline(d.seed, d.guestColor));
     }
   } catch (err) {
@@ -1513,6 +1524,7 @@ function beginOnline(seed, myColor) {
     if (state.phase !== 'online') return;
     state.mode = 'online';
     state.decks = { [myColor]: state.myDeck, [other(myColor)]: sanitizeDeck(d.deck) };
+    state.deckNames = { [myColor]: state.myDeckName, [other(myColor)]: String(d.name || '相手のデッキ').slice(0, 16) };
     setTimeout(() => startGame(seed), 500);
   });
 }
