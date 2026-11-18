@@ -7,7 +7,7 @@
   const G = (typeof module !== 'undefined' && typeof require === 'function')
     ? require('./script.js')
     // ブラウザでは script.js のトップレベルの名前がそのまま見える
-    : { state, SPECIAL_IDS, LINE_DIRS, SIZE, inside, other, countsFor, playMove, effectiveAbility, canPlaceAt };
+    : { state, SPECIAL_IDS, LINE_DIRS, SIZE, inside, other, countsFor, playMove, effectiveAbility, canPlaceAt, cardBlocked };
 
   // ===== 盤の評価：並びが長いほど、両端が空いているほど高い =====
   const SCORE = { 2: [1, 6, 25], 3: [6, 60, 400], 4: [30, 1500, 8000] };
@@ -116,6 +116,7 @@
     const st = G.state;
     const moves = [];
     st.players[st.turn].hand.forEach((card, i) => {
+      if (G.cardBlocked(card, st.turn)) return; // スパイは、相手にリーチがあると置けない
       for (const [x, y] of candidateCells(G.effectiveAbility(card, st.turn), limit)) moves.push({ i, x, y });
     });
     return moves;

@@ -17,6 +17,7 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path class="sound-on" d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/><path class="sound-off" d="M16 9.5l5 5M21 9.5l-5 5"/></svg>
       </button>
       <button type="button" id="log-btn" class="btn-text">ログ</button>
+      <button type="button" id="decks-btn" class="btn-text">デッキ</button>
       <button type="button" id="rules-btn" class="btn-text">ルール</button>
     </span>
   </header>
@@ -53,21 +54,40 @@
       <button type="button" id="online-cancel" class="btn-text">やめる</button>
     </section>
 
-    <!-- 碁石とり -->
-    <section id="draft-screen" class="screen draft-screen" hidden>
-      <div class="draft-head">
-        <div class="phase-call">
-          <span class="phase-title">碁石とりフェーズ！！</span>
-          <span id="phase-who" class="phase-who"></span>
+    <!-- デッキをえらぶ -->
+    <section id="select-screen" class="screen select-screen" hidden>
+      <h2 id="select-title" class="phase-title select-title">デッキをえらぼう！</h2>
+      <div id="select-cols" class="select-cols"></div>
+      <div class="select-foot">
+        <button type="button" id="select-go" class="btn-primary select-go">この2つで対戦</button>
+      </div>
+    </section>
+
+    <!-- デッキを作る -->
+    <section id="deck-screen" class="screen deck-screen" hidden>
+      <div class="deck-head">
+        <div class="build-call">
+          <button type="button" id="deck-back" class="build-back" aria-label="もどる"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button>
+          <input id="deck-name" class="deck-name" maxlength="16" aria-label="デッキの名前" autocomplete="off">
         </div>
-        <ol id="pick-track" class="pick-track" aria-label="取る順番"></ol>
+        <div class="deck-templates">
+          <span class="templates-label">ひな形</span>
+          <div id="deck-starters" class="deck-starters" aria-label="ひな形"></div>
+        </div>
       </div>
-      <div id="draft-pool" class="pool"></div>
-      <p id="tile-info" class="tile-info"></p>
-      <div class="teams">
-        <div class="team" id="team-b"></div>
-        <div class="team" id="team-w"></div>
+      <div class="deck-main">
+        <div id="deck-catalog" class="deck-catalog"></div>
+        <aside class="deck-side">
+          <div id="deck-meter" class="deck-meter"></div>
+          <div id="deck-bag" class="deck-bag" aria-label="デッキの中身"></div>
+          <div id="deck-info" class="deck-info"></div>
+          <div class="deck-actions">
+            <button type="button" id="deck-delete" class="btn-text deck-delete">消す</button>
+            <button type="button" id="deck-go" class="btn-primary deck-go">保存</button>
+          </div>
+        </aside>
       </div>
+      <p id="deck-toast" class="deck-toast" role="status"></p>
     </section>
 
     <!-- 対局 -->
@@ -95,6 +115,7 @@
       <p id="result-sub" class="result-sub"></p>
       <div class="dialog-actions">
         <button type="button" id="look-btn" class="btn-text">盤面を見る</button>
+        <button type="button" id="deck-again" class="btn-text">デッキを変える</button>
         <button type="button" id="again-btn" class="btn-primary">もう一局</button>
       </div>
     </div>
@@ -112,11 +133,10 @@
       <h2>ルール</h2>
       <ol class="rules">
         <li>11×11の盤で、縦・横・ななめに5つ並べたら勝ち。</li>
-        <li>碁石は1人12個。ただの石が6個と、取り合った超能力の碁石が6個。</li>
         <li id="rules-types"></li>
-        <li>取るのも置くのも黒から。黒が1つ取ったら、あとは2つずつ交互に取り、最後の1つは黒のもの。</li>
+        <li>ただの石は1ポイント。強い碁石ほどポイントが高い。強い碁石ばかりだと、置ける数が減る。同じ超能力は3つまで。</li>
         <li>碁石は袋に入れて混ぜ、手札が3つになるまで引く。黒から順に、手札を1つ選んで置く。</li>
-        <li>2人とも碁石を使い切って、まだ揃っていなければ引き分け。</li>
+        <li>碁石を使い切った人は、置かずに番を飛ばす。2人とも使い切って、まだ揃っていなければ引き分け。</li>
       </ol>
       <h3>超能力</h3>
       <dl id="ability-list" class="ability-list"></dl>

@@ -47,7 +47,7 @@ main {
   padding: 0 16px 32px;
 }
 body[data-screen="game"] main { max-width: 1120px; padding-bottom: 8px; }
-body[data-screen="draft"] main { max-width: 1120px; padding-bottom: 12px; }
+body[data-screen="deck"] main, body[data-screen="select"] main { max-width: 1180px; padding-bottom: 12px; }
 
 .topbar {
   display: flex;
@@ -776,3 +776,497 @@ body[data-screen="title"] main { padding-bottom: 0; }
 .online-search i:nth-child(2) { background: var(--white); box-shadow: inset 0 0 0 2px var(--black); animation-delay: 0.15s; }
 .online-search i:nth-child(3) { animation-delay: 0.3s; }
 @keyframes search-hop { 0%, 60%, 100% { transform: translateY(0); } 30% { transform: translateY(-14px) scale(1.06, 0.94); } }
+
+/* ===== デッキを組む ===== */
+/* ポイントの段ごとの色（ここでだけ使う。強いほど熱い色） */
+.t1 { --tier: #b9b2a4; --tier-ink: #fff; }
+.t2 { --tier: #5fb98a; --tier-ink: #fff; }
+.t3 { --tier: #4f8fe0; --tier-ink: #fff; }
+.t4 { --tier: #9a6ad9; --tier-ink: #fff; }
+.t5 { --tier: #f08c2e; --tier-ink: #fff; }
+.t6 { --tier: #d6336c; --tier-ink: #fff; }
+
+.deck-screen {
+  display: flex;
+  flex-direction: column;
+  height: calc(100svh - 64px);
+  min-height: 460px;
+  padding-top: 2px;
+  position: relative;
+}
+.deck-screen.is-swap { animation: swap-in 0.45s cubic-bezier(0.2, 0.8, 0.2, 1); }
+@keyframes swap-in { from { transform: translateX(40px); opacity: 0; } }
+.deck-head { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+.deck-head .phase-call { margin-bottom: 0; }
+
+/* スターターデッキ：横に並ぶ札。選んでいるものは墨で塗る */
+.deck-starters {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 4px 2px;
+  margin: -4px -2px;
+}
+.deck-starters::-webkit-scrollbar { display: none; }
+.starter {
+  flex: none;
+  display: grid;
+  grid-template-columns: auto;
+  gap: 4px;
+  min-width: 132px;
+  padding: 8px 12px 9px;
+  border: none;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--text) 6%, var(--bg));
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.18s cubic-bezier(0.3, 1.6, 0.5, 1), background 0.15s;
+}
+.starter:hover { transform: translateY(-3px); background: color-mix(in srgb, var(--text) 11%, var(--bg)); }
+.starter.is-on { background: var(--text); color: var(--bg); }
+.starter-name { font-weight: 700; font-size: 15px; line-height: 1.2; }
+.starter-stones { display: flex; align-items: center; gap: 3px; height: 18px; }
+.starter-stones .stone { width: 18px; flex: none; }
+.starter-stones .stone .icon { width: 64%; }
+.starter.is-on .starter-stones .stone-b { box-shadow: inset 0 0 0 1.5px var(--bg); }
+.starter-stones .more { font-size: 11px; font-weight: 700; opacity: 0.7; }
+.starter-note { font-size: 11.5px; opacity: 0.7; white-space: nowrap; }
+
+.deck-main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; gap: 10px; }
+
+/* 碁石の一覧：ポイントの段ごとに見出し。押すとデッキに入る */
+.deck-catalog {
+  min-height: 0;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  align-content: start;
+  gap: 6px;
+  padding: 2px 2px 8px;
+  scrollbar-width: thin;
+}
+.dk-head {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+}
+.dk-head:first-child { margin-top: 0; }
+.dk-coin {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.6em;
+  height: 1.6em;
+  padding: 0 0.3em;
+  border-radius: 99px;
+  background: var(--tier);
+  color: var(--tier-ink);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.dk-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 10px 4px 8px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--tier) 9%, var(--bg));
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--tier) 30%, transparent);
+  cursor: pointer;
+  user-select: none;
+  transition: transform 0.18s cubic-bezier(0.3, 1.6, 0.5, 1), background 0.15s, box-shadow 0.15s;
+}
+.dk-tile:hover, .dk-tile.is-focus { transform: translateY(-3px); background: color-mix(in srgb, var(--tier) 18%, var(--bg)); box-shadow: inset 0 0 0 2px var(--tier); }
+.dk-tile:active { transform: scale(0.94); transition-duration: 0.06s; }
+.dk-tile:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+.dk-tile.is-in { background: color-mix(in srgb, var(--tier) 22%, var(--bg)); box-shadow: inset 0 0 0 2.5px var(--tier); }
+.dk-tile.is-off:not(.is-in) { opacity: 0.5; }
+.dk-tile.is-off:not(.is-in):hover { transform: none; }
+.dk-visual { position: relative; display: grid; place-items: center; width: 42px; }
+.dk-visual > .stone { width: 100%; }
+.dk-count {
+  position: absolute;
+  right: -10px;
+  top: -6px;
+  min-width: 24px;
+  padding: 2px 5px;
+  border-radius: 99px;
+  background: var(--tier);
+  color: var(--tier-ink);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.dk-count:empty { display: none; }
+.dk-name { font-size: 12.5px; font-weight: 700; line-height: 1.2; text-align: center; }
+.dk-minus {
+  position: absolute;
+  left: 4px;
+  top: 4px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--text);
+  color: var(--bg);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  display: none;
+}
+.dk-tile.is-in .dk-minus { display: grid; place-items: center; }
+.dk-minus:hover { background: var(--accent); }
+.dk-tile.is-bump { animation: bump 0.32s; }
+@keyframes bump { 20%, 60% { transform: translateX(-5px); } 40%, 80% { transform: translateX(5px); } }
+
+/* 右側：ポイントのメーター、デッキの中身、説明、決定 */
+.deck-side { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+.deck-meter { display: flex; flex-direction: column; gap: 8px; }
+.deck-meter.is-bump .meter-bar { animation: bump 0.32s; }
+.deck-meter.is-bump .meter-num:first-child b { color: var(--accent); }
+.meter-nums { display: flex; gap: 18px; align-items: flex-end; }
+.meter-clear { margin-left: auto; align-self: center; font-size: 12.5px; }
+.meter-num { display: flex; align-items: baseline; gap: 6px; }
+.meter-num b { font-family: var(--font-display); font-weight: 400; font-size: clamp(26px, 4.2vh, 36px); line-height: 1; font-variant-numeric: tabular-nums; transition: color 0.2s; }
+.meter-num small { font-size: 12px; font-weight: 700; color: var(--muted); }
+.meter-bar { display: grid; grid-template-columns: repeat(var(--n), 1fr); gap: 2px; }
+.meter-bar i { display: block; height: 14px; background: var(--tier); }
+.meter-bar i.is-first { border-radius: 4px 0 0 4px; }
+.meter-bar i:not(.is-first):not(.is-empty) + i.is-first, .meter-bar i.is-empty { border-radius: 4px; }
+.meter-bar i.is-empty { background: color-mix(in srgb, var(--text) 9%, var(--bg)); }
+.meter-bar i:not(.is-first):not(.is-empty) { margin-left: -2px; }
+.meter-bar i.is-pop { animation: cell-pop 0.35s cubic-bezier(0.3, 1.8, 0.5, 1); }
+@keyframes cell-pop { from { transform: scaleY(0.2); } }
+
+/* デッキの中身：置ける碁石を全部並べる。多いと細かく、少ないと大きく見える */
+.deck-bag {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 4px;
+  min-height: 34px;
+}
+.deck-bag .stone { width: 28px; flex: none; }
+.deck-bag .stone .icon { width: 62%; }
+.deck-bag .stone.is-landing { visibility: hidden; }
+
+.deck-info { display: flex; gap: 12px; align-items: center; min-height: 72px; }
+.deck-demo { width: 96px; flex: none; }
+.deck-text { display: flex; flex-direction: column; gap: 3px; font-size: 13.5px; line-height: 1.55; }
+.deck-text b { display: flex; align-items: center; gap: 8px; font-size: 16px; }
+.deck-hint { margin: 0; color: var(--muted); font-size: 13.5px; }
+.deck-go { width: 100%; padding: 0.8em 1em; font-weight: 700; }
+.deck-go:disabled { opacity: 0.4; cursor: default; }
+
+.deck-toast {
+  position: absolute;
+  left: 50%;
+  bottom: 84px;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 8px 16px;
+  border-radius: 99px;
+  background: var(--text);
+  color: var(--bg);
+  font-weight: 700;
+  font-size: 14px;
+  pointer-events: none;
+  opacity: 0;
+  z-index: 20;
+}
+.deck-toast.is-show { animation: toast 1.4s ease; }
+@keyframes toast { 0% { opacity: 0; transform: translate(-50%, 8px); } 12%, 75% { opacity: 1; transform: translate(-50%, 0); } 100% { opacity: 0; } }
+
+/* スマホ：一覧はその中でスクロール。説明とデッキの中身は小さく */
+@media (max-width: 899px) {
+  .deck-catalog { grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); }
+  .dk-visual { width: 34px; }
+  .dk-name { font-size: 11.5px; }
+  .deck-side { gap: 8px; }
+  .deck-info { min-height: 0; }
+  .deck-info:has(.deck-hint) { display: none; }
+  .deck-demo { width: 64px; }
+  .deck-text { font-size: 12.5px; }
+  .deck-bag .stone { width: 20px; }
+  .meter-bar i { height: 10px; }
+}
+@media (max-width: 899px) and (max-height: 700px) {
+  .deck-bag { display: none; }
+  .deck-demo { display: none; }
+}
+
+/* 広い画面：左に一覧、右にデッキ */
+@media (min-width: 900px) {
+  .deck-head { flex-direction: row; align-items: center; justify-content: space-between; gap: 20px; }
+  .deck-main { grid-template-columns: minmax(0, 1fr) 340px; grid-template-rows: minmax(0, 1fr); gap: 24px; }
+  .deck-side { padding: 14px 16px; border-radius: 16px; background: color-mix(in srgb, var(--text) 4%, var(--bg)); }
+  .deck-bag { max-height: 40%; overflow: hidden; }
+  .deck-info { flex: 1; min-height: 110px; align-items: flex-start; padding-top: 6px; border-top: 1.5px dashed var(--line); }
+  .deck-demo { width: 120px; }
+  .deck-toast { bottom: 24px; }
+}
+
+/* スパイ：相手にリーチがあると使えない（斜線で消して、押すと揺れる） */
+.hand-piece.is-blocked > .stone { opacity: 0.35; }
+.hand-piece.is-blocked > .stone::after { content: ""; position: absolute; left: 8%; right: 8%; top: 50%; height: 3px; margin-top: -1.5px; border-radius: 3px; background: var(--accent); transform: rotate(-35deg); }
+.hand-piece.is-blocked .hand-name { text-decoration: line-through; color: var(--muted); }
+.hand-piece.is-bump { animation: bump 0.32s; }
+/* デッキの見出しまわりの細かい直し */
+.meter-num small, .meter-clear { white-space: nowrap; }
+.meter-nums { gap: 14px; }
+.deck-starters { min-width: 0; }
+.deck-head .phase-call { flex-wrap: nowrap; white-space: nowrap; }
+.deck-head .phase-who { font-size: clamp(20px, 5vw, 26px); }
+
+/* ===== デッキをえらぶ ===== */
+.select-screen {
+  display: flex;
+  flex-direction: column;
+  height: calc(100svh - 64px);
+  min-height: 420px;
+  padding-top: 2px;
+}
+.select-title { margin: 0 0 12px; font-weight: 400; }
+.select-cols { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+.select-screen[data-mode="pvp"] .select-cols { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.sel-col { display: flex; flex-direction: column; min-height: 0; gap: 8px; }
+.sel-head { display: flex; align-items: center; gap: 8px; margin: 0; font-weight: 700; font-size: clamp(15px, 4vw, 19px); }
+.sel-head .who-stone { width: 1.15em; height: 1.15em; }
+.stone-w.who-stone { box-shadow: inset 0 0 0 2px var(--black); }
+.sel-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  align-content: start;
+  gap: 10px;
+  padding: 4px;
+  margin: -4px;
+  scrollbar-width: thin;
+}
+.select-screen[data-mode="pvp"] .sel-list { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+
+.sel-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 12px 14px 11px;
+  border: none;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--text) 5%, var(--bg));
+  box-shadow: inset 0 0 0 1.5px var(--line);
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.2s cubic-bezier(0.3, 1.6, 0.5, 1), background 0.15s, box-shadow 0.15s;
+}
+.sel-card:hover { transform: translateY(-3px); box-shadow: inset 0 0 0 2px var(--text); }
+.sel-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.sel-card.is-on { background: var(--text); color: var(--bg); box-shadow: none; }
+.sel-card.is-on::after {
+  content: "";
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--accent) url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 12.5l4 4 8-9"/></svg>') center / 70% no-repeat;
+}
+.sel-card.is-picked { animation: picked 0.35s cubic-bezier(0.3, 1.6, 0.5, 1); }
+@keyframes picked { 40% { transform: scale(1.04); } }
+.sel-name { display: flex; align-items: center; gap: 8px; padding-right: 36px; font-weight: 700; font-size: 16px; line-height: 1.25; }
+.sel-tag { padding: 1px 7px; border-radius: 99px; background: color-mix(in srgb, var(--text) 10%, transparent); font-size: 10.5px; font-weight: 700; opacity: 0.8; white-space: nowrap; }
+.sel-card.is-on .sel-tag { background: color-mix(in srgb, var(--bg) 20%, transparent); }
+.sel-stones { display: flex; align-items: center; gap: 4px; min-height: 24px; flex-wrap: wrap; }
+.sel-stones .stone { width: 24px; flex: none; }
+.sel-stones .stone .icon { width: 62%; }
+.sel-card.is-on .sel-stones .stone-b { box-shadow: inset 0 0 0 1.5px var(--bg); }
+.sel-stones .more { font-size: 12px; font-weight: 700; opacity: 0.7; }
+.sel-meta { font-size: 12px; opacity: 0.72; padding-right: 28px; }
+.sel-meta b { font-size: 15px; margin-right: 1px; }
+.sel-edit {
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  opacity: 0.55;
+  cursor: pointer;
+  transition: opacity 0.15s, background 0.15s, transform 0.15s;
+}
+.sel-edit svg { width: 18px; height: 18px; }
+.sel-edit:hover { opacity: 1; background: color-mix(in srgb, currentColor 14%, transparent); transform: rotate(-8deg) scale(1.08); }
+.sel-new {
+  align-items: center;
+  justify-content: center;
+  flex-direction: row;
+  gap: 8px;
+  min-height: 90px;
+  background: none;
+  box-shadow: none;
+  border: 2px dashed var(--line);
+  color: var(--muted);
+  font-weight: 700;
+}
+.sel-new:hover { box-shadow: none; border-color: var(--text); color: var(--text); }
+.sel-plus { font-size: 22px; line-height: 1; }
+.select-foot { display: flex; justify-content: center; padding-top: 12px; }
+.select-go { width: min(100%, 420px); padding: 0.85em 1em; font-weight: 700; }
+
+/* 2人で対戦のスマホ：列が細いので、札を小さく */
+@media (max-width: 599px) {
+  .select-screen[data-mode="pvp"] .sel-list { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .select-screen[data-mode="pvp"] .sel-card { padding: 9px 10px; gap: 5px; }
+  .select-screen[data-mode="pvp"] .sel-name { font-size: 14px; flex-wrap: wrap; gap: 4px; }
+  .select-screen[data-mode="pvp"] .sel-stones .stone { width: 18px; }
+  .select-screen[data-mode="pvp"] .sel-edit { width: 28px; height: 28px; right: 4px; top: 4px; }
+  .select-screen[data-mode="pvp"] .sel-new { min-height: 64px; font-size: 13px; }
+}
+
+/* ===== デッキを作る：見出し（もどる・名前・ひな形） ===== */
+.build-call { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.build-back {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--text) 8%, var(--bg));
+  cursor: pointer;
+  transition: background 0.15s, transform 0.2s cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+.build-back:hover { background: var(--text); color: var(--bg); transform: translateX(-3px); }
+.build-back svg { width: 20px; height: 20px; }
+.deck-name {
+  min-width: 0;
+  width: 12em;
+  padding: 4px 2px;
+  border: none;
+  border-bottom: 2px dashed var(--line);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-weight: 700;
+  font-size: clamp(19px, 5vw, 24px);
+  outline: none;
+}
+.deck-name:focus { border-bottom-color: var(--accent); }
+.deck-templates { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.templates-label { flex: none; font-size: 12px; font-weight: 700; color: var(--muted); writing-mode: vertical-rl; letter-spacing: 0.1em; }
+.deck-actions { display: flex; align-items: center; gap: 14px; }
+.deck-actions .deck-go { flex: 1; }
+.deck-delete { flex: none; }
+/* 小さな漢字が太い見出しの字でつぶれないよう、決定のボタンは本文の字にする */
+.deck-go, .select-go { font-family: var(--font-body); font-size: 17px; letter-spacing: 0.04em; }
+.meter-nums { gap: 10px; }
+.meter-num b { font-size: clamp(24px, 3.6vh, 32px); }
+@media (max-width: 599px) {
+  .select-screen[data-mode="pvp"] .sel-meta { font-size: 11px; }
+  .select-screen[data-mode="pvp"] .sel-meta span, .select-screen[data-mode="pvp"] .sel-note { display: none; }
+}
+
+/* ===== デッキを選ぶ：選んだ札は強調色 ===== */
+.sel-card.is-on { background: var(--accent); color: #fff; box-shadow: 0 6px 0 -2px color-mix(in srgb, var(--accent) 45%, transparent); }
+.sel-card.is-on::after { background-color: #fff; background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="%23e5533d" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 12.5l4 4 8-9"/></svg>'); }
+.sel-card.is-on .sel-stones .stone-b { box-shadow: inset 0 0 0 1.5px #fff; }
+.sel-card.is-on .sel-stones .stone-w { box-shadow: none; }
+.sel-card.is-on .sel-tag { background: rgba(255, 255, 255, 0.25); }
+.sel-card.is-on:hover { box-shadow: 0 6px 0 -2px color-mix(in srgb, var(--accent) 45%, transparent); }
+
+/* ===== デッキを作る：碁石の札を大きく。説明と −・＋ を札の中に ===== */
+.deck-catalog { grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: 10px; }
+.dk-head { margin-top: 12px; font-size: 13px; }
+.dk-head .dk-coin { font-size: 13px; }
+.dk-tile {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: 1fr auto;
+  align-items: start;
+  column-gap: 12px;
+  row-gap: 8px;
+  padding: 12px 12px 10px;
+  border-radius: 16px;
+  text-align: left;
+}
+.dk-visual { grid-row: 1 / 3; align-self: center; width: 58px; transition: transform 0.2s; }
+.dk-visual.is-pop { animation: dk-pop 0.35s cubic-bezier(0.3, 1.8, 0.5, 1); }
+@keyframes dk-pop { 40% { transform: scale(1.18) rotate(-6deg); } }
+.dk-visual > .stone .icon { width: 58%; }
+.dk-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.dk-name { font-size: 15px; text-align: left; }
+.dk-desc {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.dk-step { display: flex; align-items: center; gap: 6px; justify-self: start; }
+.dk-step .dk-minus, .dk-plus {
+  position: static;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+}
+.dk-step .dk-minus { display: grid; background: color-mix(in srgb, var(--text) 10%, transparent); color: var(--text); visibility: hidden; }
+.dk-tile.is-in .dk-step .dk-minus { visibility: visible; }
+.dk-step .dk-minus:hover { background: var(--text); color: var(--bg); }
+.dk-plus { background: var(--tier); color: var(--tier-ink); transition: transform 0.15s; }
+.dk-tile:hover .dk-plus { transform: scale(1.12); }
+.dk-n { min-width: 1.4em; text-align: center; font-size: 17px; font-variant-numeric: tabular-nums; opacity: 0.35; }
+.dk-tile.is-in .dk-n { opacity: 1; }
+.dk-tile.is-off .dk-plus { background: color-mix(in srgb, var(--text) 15%, transparent); color: var(--muted); }
+.dk-count { display: none; }
+
+/* デッキの中身と、ひな形の石も大きく */
+.deck-bag { gap: 6px; }
+.deck-bag .stone { width: 36px; }
+.starter-stones { height: 22px; }
+.starter-stones .stone { width: 22px; }
+
+@media (max-width: 899px) {
+  .deck-catalog { grid-template-columns: repeat(auto-fill, minmax(156px, 1fr)); gap: 8px; }
+  .dk-tile { padding: 10px 10px 8px; column-gap: 9px; row-gap: 6px; }
+  .dk-visual { width: 46px; }
+  .dk-name { font-size: 14px; }
+  .dk-desc { font-size: 11px; }
+  .deck-bag .stone { width: 24px; }
+}
+@media (max-width: 359px) {
+  .deck-catalog { grid-template-columns: minmax(0, 1fr); }
+}
+/* ポイントが足りない札も、文字は読めるままにする（石と＋だけ薄く） */
+.dk-tile.is-off:not(.is-in) { opacity: 1; }
+.dk-tile.is-off:not(.is-in) .dk-visual { opacity: 0.45; }

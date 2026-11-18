@@ -216,7 +216,7 @@
   };
   // 能力 → 音（形の組み合わせと同じ割り当て）
   const ABILITY_SOUND = {
-    bomb: ['fire', { pw: 1 }], rowBomb: ['fire', { pw: 0.8 }], colBomb: ['fire', { pw: 0.8 }], diagBomb: ['fire', { pw: 0.8 }],
+    nuke: ['fire', { pw: 1.7 }], bomb: ['fire', { pw: 1 }], rowBomb: ['fire', { pw: 0.8 }], colBomb: ['fire', { pw: 0.8 }], diagBomb: ['fire', { pw: 0.8 }],
     push: ['wind', {}], suck: ['vortex', { contract: true }], spin: ['vortex', { contract: false }], spinBack: ['vortex', { contract: false }],
     gravity: ['gravity', { dir: 1 }], antigravity: ['gravity', { dir: -1 }],
     go: ['earth', { pw: 0.6 }], wall: ['earth', { pw: 0.8 }], weight: ['earth', { pw: 1.2 }], shield: ['earth', { pw: 0.5 }],

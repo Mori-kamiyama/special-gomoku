@@ -3,17 +3,11 @@
 // ===== 定数 =====
 const SIZE = 11;
 const HAND_SIZE = 3;
-const PLAIN_COUNT = 6;
 // 取り合いには、毎回この数の種類を1つずつ並べる（重なりなし）
-const DRAFT_POOL_SIZE = 12;
 // 取る順番（0 = 黒, 1 = 白）。打つのと同じく黒から。3択から1つずつ、交互に取る
-const DRAFT_ORDER = [0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1];
-const OFFER_SIZE = 3; // 取り合いで毎回出す数
 // CPU と対戦するときは、人が黒（先手）、CPU が白
 const CPU_COLOR = 'w';
 const CPU_DELAY_MS = 450;
-const CPU_DRAFT_MS = 200;
-const PICKS_PER_PLAYER = 6;
 const BANNER_MS = 750;
 const STEP_MS = 420; // 効果 → 重力 → 囲碁、と段階ごとに見せる間
 const MAX_ROUNDS = 12; // 重力と罠のくり返しの上限
@@ -35,6 +29,7 @@ const other = (c) => (c === 'b' ? 'w' : 'b');
 
 // ===== アイコン（24×24 の SVG。線は石の文字色で描く） =====
 const ICONS = {
+  nuke: '<circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"/><path fill="currentColor" stroke="none" d="M10.25 8.97 7.25 3.77A9.5 9.5 0 0 1 16.75 3.77L13.75 8.97A3.5 3.5 0 0 0 10.25 8.97ZM15.5 12H21.5A9.5 9.5 0 0 1 16.75 20.23L13.75 15.03A3.5 3.5 0 0 0 15.5 12ZM10.25 15.03 7.25 20.23A9.5 9.5 0 0 1 2.5 12H8.5A3.5 3.5 0 0 0 10.25 15.03Z"/>',
   gravity: '<path d="M12 4v15M6 13l6 6 6-6"/>',
   antigravity: '<path d="M12 20V5M6 11l6-6 6 6"/>',
   spin: '<path d="M19 12a7 7 0 1 1-2.1-5"/><path d="M19.5 3.5v4h-4"/>',
@@ -81,6 +76,7 @@ const ABILITIES = {
   joker: { name: 'ジョーカー', desc: '白にも黒にもなる。相手の列にも入る' },
   push: { name: '押し出し', desc: 'まわりの石を1マス外へ押す。盤から落ちた石は消える', onPlace: pushAbility, area: 'ring' },
   suck: { name: '吸い込み', desc: '2マス先の石を1マス手前まで吸い寄せる', onPlace: suckAbility, area: 'ring2' },
+  nuke: { name: '核', desc: 'まわり5×5の石を全部消す', onPlace: nukeAbility, area: 'sq5' },
   bomb: { name: '爆弾', desc: 'まわりの石を全部消す', onPlace: bombAbility, area: 'ring' },
   rowBomb: { name: '横爆弾', desc: '左右2マスずつの石を消す', onPlace: (b, x, y) => lineBomb(b, x, y, [[1, 0]]), area: 'row' },
   colBomb: { name: '縦爆弾', desc: '上下2マスずつの石を消す', onPlace: (b, x, y) => lineBomb(b, x, y, [[0, 1]]), area: 'col' },
@@ -91,8 +87,8 @@ const ABILITIES = {
   othello: { name: 'オセロ', desc: '相手の石をちょうど1個はさんだら、その石を自分の色にする', onPlace: othelloAbility },
   go: { name: '囲碁', desc: '盤にある間、隣の相手の石が囲まれて逃げ場をなくしたら取る', area: 'cross' },
   chain: { name: '連続', desc: 'もう1回置ける', extraTurn: true },
-  gravity: { name: '重力', desc: 'いつでも下へ落ちる。石か盤の端で止まる', area: 'down' },
-  antigravity: { name: '反重力', desc: 'いつでも上へ昇る。石か盤の端で止まる', area: 'up' },
+  gravity: { name: '重力', desc: 'いつでも下へ落ちる。下に続く石も一緒に押して落とす', area: 'down' },
+  antigravity: { name: '反重力', desc: 'いつでも上へ昇る。上に続く石も一緒に押して昇らせる', area: 'up' },
   spin: { name: '回転', desc: 'まわりの8マスを、時計回りに1つずらす', onPlace: (b, x, y) => spinRing(b, x, y, 1), area: 'ring' },
   spinBack: { name: '逆回転', desc: 'まわりの8マスを、反時計回りに1つずらす', onPlace: (b, x, y) => spinRing(b, x, y, -1), area: 'ring' },
   clone: { name: '分身', desc: '盤の真ん中をはさんだ反対側にも、自分の石が1つ増える', onPlace: (b, x, y, c, st) => cloneAt(b, SIZE - 1 - x, SIZE - 1 - y, c, st), area: 'mirror' },
@@ -102,7 +98,7 @@ const ABILITIES = {
   takeover: { name: '乗っ取り', desc: '相手の石の上に置ける。下の石は消える', onEnemy: true },
   seal: { name: '封印', desc: '相手は次の番、超能力が使えない', onPlace: sealAbility },
   jam: { name: 'おじゃま', desc: 'まわり8マスの碁石の超能力を消して、ただの石にする', onPlace: jamAbility, area: 'ring' },
-  spy: { name: 'スパイ', desc: '相手の色で置く。この石を含む列が揃ったら、こっちの勝ち' },
+  spy: { name: 'スパイ', desc: '相手の色で置く。この石を含む列が揃ったら、こっちの勝ち。相手にリーチがあるときは置けない' },
   mine: { name: '地雷', desc: 'まわり8マスに相手が石を置いたら、その石と一緒に消える', area: 'ring' },
   weight: { name: '重し', desc: '押し出し・吸い込み・回転で動かされない' },
   shield: { name: '盾', desc: '爆弾・囲碁・地雷・乗っ取りで消されない' },
@@ -160,6 +156,15 @@ function suckAbility(board, x, y) {
 function bombAbility(board, x, y) {
   const fx = [];
   for (const [dx, dy] of DIRS8) if (inside(x + dx, y + dy)) removeStone(board, fx, x + dx, y + dy);
+  return fx;
+}
+
+// 核：まわり5×5の石を全部消す。置いた碁石は残る
+function nukeAbility(board, x, y) {
+  const fx = [];
+  for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+    if ((dx || dy) && inside(x + dx, y + dy)) removeStone(board, fx, x + dx, y + dy);
+  }
   return fx;
 }
 
@@ -246,19 +251,33 @@ function jamAbility(board, x, y) {
 
 // ===== 盤にある間ずっと効くもの =====
 // 重力の石は下へ、反重力の石は上へ、止まるまで動かす。重力は下の行から、反重力は上の行から順に動かす
+// 連鎖：重力の石は、その下に続く石をまとめて押して、一緒に落ちる（反重力は上へ）。重しは押せない
 function settle(board) {
   const fx = [];
   for (let y = SIZE - 2; y >= 0; y--) {
     for (let x = 0; x < SIZE; x++) {
-      if (board[y][x] && board[y][x].ability === 'gravity') slideStone(board, fx, x, y, 0, 1);
+      if (board[y][x] && board[y][x].ability === 'gravity') pushColumn(board, fx, x, y, 1);
     }
   }
   for (let y = 1; y < SIZE; y++) {
     for (let x = 0; x < SIZE; x++) {
-      if (board[y][x] && board[y][x].ability === 'antigravity') slideStone(board, fx, x, y, 0, -1);
+      if (board[y][x] && board[y][x].ability === 'antigravity') pushColumn(board, fx, x, y, -1);
     }
   }
   return fx;
+}
+
+// (x, y) の石と、その先（dy の向き）に続く石を、ひとかたまりで動けるところまで動かす
+function pushColumn(board, fx, x, y, dy) {
+  let end = y;
+  while (inside(x, end + dy) && board[end + dy][x]) end += dy;
+  // 重しや、逆向きの重力の石が混ざっていたら動かない（押し合って止まる）
+  const against = dy > 0 ? 'antigravity' : 'gravity';
+  for (let k = y; k !== end + dy; k += dy) if (isFixed(board[k][x]) || board[k][x].ability === against) return;
+  let room = 0;
+  while (inside(x, end + dy * (room + 1)) && !board[end + dy * (room + 1)][x]) room++;
+  if (!room) return;
+  for (let k = end; k !== y - dy; k -= dy) moveStone(board, fx, x, k, x, k + dy * room); // 先の石から動かす
 }
 
 function slideStone(board, fx, x, y, dx, dy) {
@@ -317,10 +336,11 @@ function mineCheck(board, uid) {
   if (!pos) return fx;
   const [x, y] = pos;
   const placed = board[y][x];
+  if (placed.color === 'n') return fx;
   for (const [dx, dy] of DIRS8) {
     const mx = x + dx, my = y + dy;
     const m = inside(mx, my) && board[my][mx];
-    if (m && m.ability === 'mine' && m.color !== placed.color) {
+    if (m && m.ability === 'mine' && m.color === other(placed.color)) {
       removeStone(board, fx, mx, my);
       removeStone(board, fx, x, y);
       for (const f of fx) f.by = 'mine';
@@ -444,14 +464,34 @@ function shuffle(arr) {
   return a;
 }
 
-// 全種類から12種類を選び、1つずつ並べる（重なりなし）
-function makeDraftPool() {
-  return shuffle(SPECIAL_IDS).slice(0, DRAFT_POOL_SIZE).map(makeCard);
-}
+// ===== デッキ =====
+// 24ポイントまで組める。ただの石は1ポイント。強い碁石ほど高い（数と強さのトレードオフ）
+const DECK_POINTS = 24;
+const MAX_COPIES = 3; // 同じ超能力は3つまで
+const COST = {
+  plain: 1,
+  gravity: 2, antigravity: 2, mine: 2, jam: 2, go: 2, weight: 2, shield: 2, wall: 2, joker: 2, push: 2,
+  bomb: 3, rowBomb: 3, colBomb: 3, spin: 3, spinBack: 3, clone: 3, cloneH: 3, cloneV: 3, seal: 3, suck: 3, flag: 3,
+  diagBomb: 4, takeover: 4, grow: 4, chain: 4,
+  othello: 5, square: 6, nuke: 6,
+  spy: 3, // リーチがあると置けないので、安くした
+};
+const costOf = (id) => COST[id] || 3;
+// デッキは { 能力: 数 }。ただの石も含む
+const deckPoints = (deck) => Object.entries(deck).reduce((s, [id, n]) => s + costOf(id) * n, 0);
+const deckCount = (deck) => Object.values(deck).reduce((s, n) => s + n, 0);
+// 名前の順に並べる（オンラインで両方の画面が同じ袋を作れるように）
+const deckList = (deck) => Object.keys(deck).sort().flatMap((id) => Array(deck[id]).fill(id));
+const STARTERS = [
+  { id: 'balance', name: 'バランス', note: 'いろいろ少しずつ', deck: { plain: 8, bomb: 1, spin: 1, grow: 1, seal: 1, clone: 1 } },
+  { id: 'mass', name: '物量', note: '数で押す', deck: { plain: 14, gravity: 2, mine: 2, shield: 1 } },
+  { id: 'bomber', name: '爆弾魔', note: '消して、消して、消す', deck: { plain: 5, bomb: 3, rowBomb: 1, colBomb: 1, diagBomb: 1 } },
+  { id: 'nuclear', name: '一発逆転', note: '核が2つ。置けるのは9つだけ', deck: { plain: 6, nuke: 2, square: 1 } },
+];
 
-function makePlayer(color, picks) {
-  const deck = picks.concat(Array.from({ length: PLAIN_COUNT }, () => makeCard('plain')));
-  const p = { color, bag: shuffle(deck), hand: [] };
+function makePlayer(color, deck) {
+  const list = Array.isArray(deck) ? deck.map((c) => (typeof c === 'string' ? makeCard(c) : c)) : deckList(deck).map(makeCard);
+  const p = { color, bag: shuffle(list), hand: [] };
   fillHand(p);
   return p;
 }
@@ -465,13 +505,10 @@ const piecesLeft = (p) => p.hand.length + p.bag.length;
 
 // ===== 状態 =====
 const state = {
-  phase: 'title', // title | draft | play | end
+  phase: 'title', // title | deck | online | play | end
   mode: 'pvp', // pvp（2人で対戦）| cpu（CPU と対戦）
   board: [],
-  pool: [],
-  picks: { b: [], w: [] },
-  draftStep: 0,
-  draftFocus: null,
+  decks: { b: null, w: null }, // 対局に使うデッキ（{ 能力: 数 }）
   players: {},
   turn: 'b',
   selected: 0,
@@ -507,6 +544,23 @@ function canPlaceAt(x, y, color, ability) {
   return !!ABILITIES[ability].onEnemy && cell.color === other(color) && !isShielded(cell);
 }
 
+// リーチ：空きマスのどこかに c の石を1つ置けば、c の列が揃う
+function hasReach(board, c) {
+  for (let y = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++) {
+    if (board[y][x]) continue;
+    board[y][x] = { color: c, ability: 'plain' };
+    const win = findWin(board, c);
+    board[y][x] = null;
+    if (win) return true;
+  }
+  return false;
+}
+
+// 手札の碁石を、いま使えるか（スパイは、相手にリーチがあると使えない）
+function cardBlocked(card, color, board = state.board) {
+  return effectiveAbility(card, color) === 'spy' && hasReach(board, other(color));
+}
+
 const snapshot = (board) => board.map((row) => row.map((c) => c && { ...c }));
 
 // ===== 1つ置いたときに起きることを、全部進める =====
@@ -523,9 +577,11 @@ function resolvePlacement(board, x, y, color, id, st) {
   const allFx = fx0.slice();
   const grown = growth(board, color, st);
   if (grown.length) { steps.push({ board: snapshot(board), fx: grown }); allFx.push(...grown); }
+  // 地雷は、置いた石と、分身・増殖で増えた石の両方に反応する
+  const newUids = [piece.uid, ...allFx.filter((f) => f.kind === 'placed').map((f) => board[f.y][f.x] && board[f.y][f.x].uid).filter(Boolean)];
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const fx = settle(board);
-    if (round === 0) fx.push(...mineCheck(board, piece.uid));
+    if (round === 0) for (const uid of newUids) fx.push(...mineCheck(board, uid));
     fx.push(...goTraps(board));
     if (!fx.length) break;
     steps.push({ board: snapshot(board), fx });
@@ -543,7 +599,7 @@ function playMove(x, y) {
   const card = p.hand[state.selected];
   if (state.phase !== 'play' || !card) return { ok: false };
   const id = effectiveAbility(card, color);
-  if (!canPlaceAt(x, y, color, id)) return { ok: false };
+  if (cardBlocked(card, color) || !canPlaceAt(x, y, color, id)) return { ok: false };
 
   const wasSealed = state.sealed === color;
   p.hand.splice(state.selected, 1);
@@ -591,6 +647,9 @@ function playMove(x, y) {
   if (!piecesLeft(state.players[next])) {
     log(`${nameOf(next)}は碁石を使い切った`);
     next = other(next);
+  } else if (state.players[next].hand.every((c) => cardBlocked(c, next))) {
+    log(`${nameOf(next)}は置ける碁石がなくて、番を飛ばした`);
+    next = other(next);
   }
   const full = state.board.every((row) => row.every(Boolean));
   if (!piecesLeft(state.players[next]) || full) {
@@ -625,7 +684,7 @@ const $ = (id) => document.getElementById(id);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function showScreen(name) {
-  for (const s of ['title', 'draft', 'game', 'online']) $(`${s}-screen`).hidden = s !== name;
+  for (const s of ['title', 'select', 'deck', 'game', 'online']) $(`${s}-screen`).hidden = s !== name;
   document.body.dataset.screen = name;
   $('log-btn').hidden = name !== 'game';
 }
@@ -648,160 +707,335 @@ function stoneHTML(color, ability, extraClass = '', attrs = '') {
   return `<span class="stone stone-${color} ${extraClass}" ${attrs}>${iconHTML(ability)}</span>`;
 }
 
-// --- 碁石とり（3択をくり返す） ---
-// 毎回3つの碁石が出て、1つ取る。黒と白が交互に6回ずつ。12個を見比べるより速く決められる
-const draftDone = () => state.draftStep >= DRAFT_ORDER.length;
-const draftColor = () => COLORS[DRAFT_ORDER[Math.min(state.draftStep, DRAFT_ORDER.length - 1)]];
+// --- デッキ ---
+// 対局の前に「デッキをえらぶ」画面で、スターターデッキか自分のデッキを選ぶ。
+// 変えたくなったら「デッキを作る」画面（構築）へ。保存すると、選ぶ画面に戻る
 const isCpu = (color) => state.mode === 'cpu' && color === CPU_COLOR;
 const isRemote = (color) => state.mode === 'online' && color !== state.myColor;
 const notMine = (color) => isCpu(color) || isRemote(color); // この画面の人が操作できない番
 const playerName = nameOf;
+const DECKS_KEY = 'gomoku-decks';
+const ICON_EDIT = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M14 6l4 4"/></svg>';
+const ICON_COPY = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>';
+const escapeHTML = (t) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const CHOICE_KEY = 'gomoku-choice';
+const TIER = { 1: 't1', 2: 't2', 3: 't3', 4: 't4', 5: 't5', 6: 't6' }; // ポイントの色分け
+const CATALOG = ['plain', ...SPECIAL_IDS].sort((x, y) => costOf(x) - costOf(y));
 
-// まだ誰も取っていない種類から、3つ出す（重なりなし）
-function makeOffer() {
-  const taken = new Set([...state.picks.b, ...state.picks.w].map((c) => c.ability));
-  return shuffle(SPECIAL_IDS.filter((id) => !taken.has(id))).slice(0, OFFER_SIZE).map(makeCard);
+// 自分のデッキ：[{ id, name, deck }]。ブラウザに保存する
+function loadMyDecks() {
+  try {
+    const list = JSON.parse(localStorage.getItem(DECKS_KEY));
+    if (Array.isArray(list)) return list.filter((d) => d && d.id && d.deck);
+    const old = JSON.parse(localStorage.getItem('gomoku-deck')); // 前の版で1つだけ保存していたもの
+    if (old && typeof old === 'object' && deckCount(old)) return [{ id: 'd1', name: 'じぶんのデッキ', deck: old }];
+  } catch (e) { /* 読めなければ空 */ }
+  return [];
+}
+function saveMyDecks(list) { try { localStorage.setItem(DECKS_KEY, JSON.stringify(list)); } catch (e) { /* 保存できなくても遊べる */ } }
+function loadChoice() { try { return JSON.parse(localStorage.getItem(CHOICE_KEY)) || {}; } catch (e) { return {}; } }
+function saveChoice(c) { try { localStorage.setItem(CHOICE_KEY, JSON.stringify(c)); } catch (e) { /* 保存できなくても遊べる */ } }
+
+// デッキの参照：'preset:balance' か 'my:d3'
+function deckByRef(ref) {
+  if (!ref) return null;
+  if (ref.startsWith('preset:')) {
+    const st = STARTERS.find((x) => `preset:${x.id}` === ref);
+    return st && { ref, name: st.name, note: st.note, deck: st.deck, preset: true };
+  }
+  const d = loadMyDecks().find((x) => `my:${x.id}` === ref);
+  return d && { ref, name: d.name, note: '', deck: d.deck, id: d.id };
+}
+const allRefs = () => [...STARTERS.map((s) => `preset:${s.id}`), ...loadMyDecks().map((d) => `my:${d.id}`)];
+function deckIcons(deck, color, max) {
+  const stones = deckList(deck).filter((x) => x !== 'plain').sort((x, y) => costOf(y) - costOf(x));
+  return stones.slice(0, max).map((x) => stoneHTML(color, x)).join('') + (stones.length > max ? `<span class="more">+${stones.length - max}</span>` : '');
 }
 
-function startDraft(mode = state.mode, seed = newSeed()) {
+// ===== デッキをえらぶ =====
+// mode：pvp は黒と白が横に並んで選ぶ。cpu と online は自分だけ。manage はタイトルの「デッキ」（作る・直すだけ）
+function startSelect(mode = state.mode) {
   for (const d of document.querySelectorAll('dialog[open]')) d.close();
   state.mode = mode;
-  state.phase = 'draft';
+  state.phase = 'select';
   state.remoteQueue = [];
-  setSeed(seed);
-  state.picks = { b: [], w: [] };
-  state.draftStep = 0;
-  state.offer = makeOffer();
-  state.draftFocus = null;
-  state.busy = false;
-  state.lastCallColor = null;
   state.logs = [];
-  showScreen('draft');
-  renderDraft();
-  nextDraftTurn();
+  const saved = loadChoice();
+  const ok = (r) => (deckByRef(r) ? r : null);
+  state.choice = {
+    b: ok(state.choice && state.choice.b) || ok(saved.b) || 'preset:balance',
+    w: ok(state.choice && state.choice.w) || ok(saved.w) || 'preset:mass',
+  };
+  showScreen('select');
+  renderSelect();
 }
 
-function renderDraft() {
-  const color = draftColor();
-  $('draft-screen').dataset.turn = color;
-  $('draft-pool').classList.toggle('is-waiting', notMine(color));
-  const who = $('phase-who');
-  who.innerHTML = `<span class="who-stone stone-${color}"></span>${playerName(color)}！`;
-  if (state.lastCallColor !== color) {
-    who.classList.remove('is-pop'); void who.offsetWidth; who.classList.add('is-pop');
-    state.lastCallColor = color;
-  }
+const selectCols = () => (state.mode === 'pvp' ? ['b', 'w'] : ['b']);
 
-  // 取る順番の12枠。取った碁石で埋まっていく
-  const filled = { b: 0, w: 0 };
-  $('pick-track').innerHTML = DRAFT_ORDER.map((v, i) => {
-    const c = COLORS[v];
-    const card = i < state.draftStep ? state.picks[c][filled[c]++] : null;
-    const cls = ['slot', `slot-${c}`];
-    if (i === state.draftStep) cls.push('is-current');
-    return `<li class="${cls.join(' ')}">${card ? stoneHTML(c, card.ability) : ''}</li>`;
-  }).join('');
-
-  // 3つのカード。属性の色を下地にし、マウスを乗せると属性の粒が動き出し、お試しの盤が出る
-  Demo.stopAll();
-  $('draft-pool').innerHTML = state.offer.map((card, i) => {
-    const ab = ABILITIES[card.ability];
-    const el = FX.elementOf(card.ability);
-    const E = FX.ELEMENTS[el];
-    return `<button type="button" class="tile card3 is-deal" data-id="${card.id}" data-ability="${card.ability}" style="--el-tint:${E.tint}; animation-delay:${i * 60}ms">
-      <span class="tile-visual">${stoneHTML(color, card.ability)}<span class="tile-demo mini"></span></span>
-      <span class="tile-text"><span class="tile-name">${ab.name}</span><span class="tile-desc">${ab.desc}</span></span>
-    </button>`;
-  }).join('');
-  $('draft-pool').querySelectorAll('.tile').forEach((el) => {
-    const id = Number(el.dataset.id);
-    el.addEventListener('pointerenter', (e) => { if (e.pointerType === 'mouse') focusTile(id); });
-    el.addEventListener('pointerup', (e) => onTileTap(id, e.pointerType));
-    el.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pickDraft(id); } });
-    el.addEventListener('focus', () => focusTile(id));
-  });
-  renderTileInfo();
-
-  for (const c of COLORS) {
-    const team = $(`team-${c}`);
-    team.classList.toggle('is-active', c === color);
-    const have = state.picks[c].length;
-    const slots = Array.from({ length: PICKS_PER_PLAYER }, (_, i) => {
-      const card = state.picks[c][i];
-      if (card) return `<span class="team-piece" title="${ABILITIES[card.ability].name}：${ABILITIES[card.ability].desc}">${stoneHTML(c, card.ability)}</span>`;
-      return `<span class="team-piece is-empty ${c === color && i === have ? 'is-next' : ''}"></span>`;
+function renderSelect() {
+  const pvp = state.mode === 'pvp', manage = state.mode === 'manage';
+  $('select-screen').dataset.mode = state.mode;
+  $('select-title').textContent = manage ? 'デッキ' : 'デッキをえらぼう！';
+  const refs = allRefs();
+  $('select-cols').innerHTML = selectCols().map((color) => {
+    const head = pvp ? `<p class="sel-head"><span class="who-stone stone-${color}"></span>${COLOR_NAME[color]}のデッキ</p>` : '';
+    const cards = refs.map((ref) => {
+      const d = deckByRef(ref);
+      const on = !manage && state.choice[color] === ref;
+      return `<div class="sel-card ${on ? 'is-on' : ''} ${d.preset ? 'is-preset' : 'is-mine'}" data-ref="${ref}" data-color="${color}" role="button" tabindex="0" aria-pressed="${on}">
+        <span class="sel-name">${escapeHTML(d.name)}${d.preset ? '<span class="sel-tag">スターター</span>' : ''}</span>
+        <span class="sel-stones">${deckIcons(d.deck, color, pvp ? 6 : 9)}</span>
+        <span class="sel-meta"><b>${deckCount(d.deck)}</b>個${d.note ? `<span class="sel-note">・${d.note}</span>` : ''}</span>
+        <button type="button" class="sel-edit" aria-label="${escapeHTML(d.name)}を${d.preset ? 'もとに作る' : '直す'}" title="${d.preset ? 'これをもとに作る' : '直す'}">${d.preset ? ICON_COPY : ICON_EDIT}</button>
+      </div>`;
     }).join('');
-    team.innerHTML = `<span class="team-name"><span class="turn-dot turn-${c}"></span>${playerName(c)}</span><div class="team-pieces">${slots}</div>`;
+    const add = `<button type="button" class="sel-card sel-new" data-color="${color}"><span class="sel-plus">＋</span>新しいデッキを作る</button>`;
+    return `<div class="sel-col" data-color="${color}">${head}<div class="sel-list">${cards}${add}</div></div>`;
+  }).join('');
+  const go = $('select-go');
+  go.hidden = manage;
+  go.textContent = pvp ? 'この2つで対戦' : state.mode === 'online' ? 'このデッキで相手をさがす' : 'このデッキで対戦';
+}
+
+function onSelectClick(e) {
+  const newBtn = e.target.closest('.sel-new');
+  if (newBtn) { openBuilder(null, newBtn.dataset.color); return; }
+  const card = e.target.closest('.sel-card');
+  if (!card) return;
+  const { ref, color } = card.dataset;
+  if (e.target.closest('.sel-edit') || state.mode === 'manage') { openBuilder(ref, color); return; }
+  if (state.choice[color] === ref) return;
+  state.choice[color] = ref;
+  saveChoice(state.choice);
+  Sound.select();
+  renderSelect();
+  const on = $('select-cols').querySelector(`.sel-card[data-ref="${ref}"][data-color="${color}"]`);
+  if (on) { on.classList.add('is-picked'); }
+}
+
+// 決定：2人で対戦なら黒と白、CPU は自分だけ（CPU はスターターデッキからくじ）、オンラインは相手をさがす
+function confirmSelect() {
+  const mine = deckByRef(state.choice.b);
+  if (!mine) return;
+  saveChoice(state.choice);
+  if (state.mode === 'pvp') { state.decks = { b: mine.deck, w: deckByRef(state.choice.w).deck }; startGame(); return; }
+  if (state.mode === 'cpu') {
+    state.decks = { b: mine.deck, w: STARTERS[Math.floor(Math.random() * STARTERS.length)].deck };
+    startGame();
+    return;
+  }
+  state.myDeck = mine.deck;
+  startOnline();
+}
+
+// ===== デッキを作る（構築） =====
+// ref：直す自分のデッキ、またはもとにするスターター。null なら空から。color：作り終えたら、その色に選ぶ
+function openBuilder(ref, color = 'b') {
+  const d = deckByRef(ref);
+  const mine = loadMyDecks();
+  state.build = {
+    id: d && !d.preset ? d.id : null,
+    name: d ? (d.preset ? `${d.name}のコピー` : d.name) : `デッキ${mine.length + 1}`,
+    color,
+    returnMode: state.mode,
+    dirty: !d || !!d.preset,
+  };
+  state.edit = { ...(d ? d.deck : {}) };
+  state.deckSource = d && d.preset ? d.ref.slice(7) : null;
+  state.deckFocus = null;
+  state.phase = 'build';
+  showScreen('deck');
+  $('deck-name').value = state.build.name;
+  $('deck-delete').hidden = !state.build.id;
+  renderDeck(true);
+}
+
+function leaveBuilder(saved) {
+  if (!saved && state.build.dirty && deckCount(state.edit) && !window.confirm('保存せずにもどりますか？')) return;
+  startSelect(state.build.returnMode);
+}
+
+function saveBuilder() {
+  const deck = { ...state.edit };
+  if (!deckCount(deck)) return;
+  const list = loadMyDecks();
+  const name = ($('deck-name').value || '').trim().slice(0, 16) || `デッキ${list.length + 1}`;
+  let id = state.build.id;
+  if (id) { const d = list.find((x) => x.id === id); if (d) { d.name = name; d.deck = deck; } } else {
+    id = `d${Date.now().toString(36)}`;
+    list.push({ id, name, deck });
+  }
+  saveMyDecks(list);
+  if (state.build.returnMode !== 'manage') {
+    state.choice = state.choice || {};
+    state.choice[state.build.color] = `my:${id}`;
+    saveChoice(state.choice);
+  }
+  Sound.pick();
+  leaveBuilder(true);
+}
+
+function deleteBuilder() {
+  if (!state.build.id || !window.confirm(`「${$('deck-name').value}」を消しますか？`)) return;
+  saveMyDecks(loadMyDecks().filter((d) => d.id !== state.build.id));
+  state.build.dirty = false;
+  leaveBuilder(true);
+}
+
+function loadTemplate(id) {
+  const st = STARTERS.find((x) => x.id === id);
+  if (!st) return;
+  state.edit = { ...st.deck };
+  state.deckSource = id;
+  state.build.dirty = true;
+  Sound.select();
+  renderDeck();
+}
+
+const deckColor = () => (state.build ? state.build.color : 'b');
+
+function renderDeck(full = false) {
+  const color = deckColor();
+  const deck = state.edit;
+  const pts = deckPoints(deck), left = DECK_POINTS - pts, count = deckCount(deck);
+  $('deck-screen').dataset.turn = color;
+
+  // ひな形（スターターデッキ）：押すと、その中身から始める
+  $('deck-starters').innerHTML = STARTERS.map((st) => `<button type="button" class="starter ${state.deckSource === st.id ? 'is-on' : ''}" data-id="${st.id}">
+      <span class="starter-name">${st.name}</span>
+      <span class="starter-stones">${deckIcons(st.deck, color, 6)}</span>
+      <span class="starter-note">${st.note}・${deckCount(st.deck)}個</span>
+    </button>`).join('');
+
+  // 碁石の一覧（ポイントの安い順）
+  if (full || !$('deck-catalog').children.length || $('deck-catalog').dataset.color !== color) {
+    $('deck-catalog').dataset.color = color;
+    let lastCost = 0;
+    $('deck-catalog').innerHTML = CATALOG.map((id) => {
+      const c = costOf(id);
+      const head = c !== lastCost ? `<p class="dk-head ${TIER[c]}"><span class="dk-coin">${c}</span>ポイント</p>` : '';
+      lastCost = c;
+      const desc = id === 'plain' ? '超能力のない、ふつうの碁石' : ABILITIES[id].desc;
+      return `${head}<div class="dk-tile ${TIER[c]}" data-id="${id}" role="button" tabindex="0" aria-label="${ABILITIES[id].name}（${c}ポイント）">
+        <span class="dk-visual">${stoneHTML(color, id)}</span>
+        <span class="dk-body"><span class="dk-name">${ABILITIES[id].name}</span><span class="dk-desc">${desc}</span></span>
+        <span class="dk-step">
+          <button type="button" class="dk-minus" aria-label="${ABILITIES[id].name}を1つへらす">−</button>
+          <b class="dk-n">0</b>
+          <span class="dk-plus" aria-hidden="true">＋</span>
+        </span>
+      </div>`;
+    }).join('');
+    $('deck-catalog').querySelectorAll('.dk-tile').forEach((el) => {
+      const id = el.dataset.id;
+      el.addEventListener('pointerenter', (e) => { if (e.pointerType === 'mouse') focusDeck(id); });
+      el.addEventListener('click', (e) => {
+        if (e.target.closest('.dk-minus')) { changeDeck(id, -1); return; }
+        focusDeck(id);
+        changeDeck(id, 1, el);
+      });
+      el.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ' || e.key === '+') { e.preventDefault(); changeDeck(id, 1, el); }
+        if (e.key === 'Backspace' || e.key === '-') { e.preventDefault(); changeDeck(id, -1); }
+      });
+      el.addEventListener('focus', () => focusDeck(id));
+    });
+  }
+  $('deck-catalog').querySelectorAll('.dk-tile').forEach((el) => {
+    const id = el.dataset.id, n = deck[id] || 0;
+    const max = id === 'plain' ? Infinity : MAX_COPIES;
+    el.classList.toggle('is-in', n > 0);
+    el.classList.toggle('is-off', n >= max || costOf(id) > left);
+    el.querySelector('.dk-n').textContent = n;
+  });
+
+  // ポイントのメーター：1ポイントが1マス。碁石ごとに、その色でマスが埋まる
+  const cells = [];
+  for (const id of CATALOG) for (let k = 0; k < (deck[id] || 0); k++) {
+    for (let j = 0; j < costOf(id); j++) cells.push(`<i class="${TIER[costOf(id)]} ${j === 0 ? 'is-first' : ''}" data-id="${id}"></i>`);
+  }
+  while (cells.length < DECK_POINTS) cells.push('<i class="is-empty"></i>');
+  $('deck-meter').innerHTML = `
+    <div class="meter-nums">
+      <span class="meter-num"><b>${left}</b><small>のこりポイント</small></span>
+      <span class="meter-num"><b>${count}</b><small>置ける碁石</small></span>
+      <button type="button" class="btn-text meter-clear" ${count ? '' : 'disabled'}>空にする</button>
+    </div>
+    <div class="meter-bar" style="--n:${DECK_POINTS}">${cells.join('')}</div>`;
+
+  // デッキの中身：置ける碁石を全部並べる（数と強さが見てわかる）
+  $('deck-bag').innerHTML = deckList(deck).sort((x, y) => CATALOG.indexOf(y) - CATALOG.indexOf(x))
+    .map((id) => stoneHTML(color, id, '', `data-id="${id}"`)).join('');
+
+  $('deck-meter').querySelector('.meter-clear').onclick = () => {
+    state.edit = {};
+    state.deckSource = null;
+    state.build.dirty = true;
+    Sound.select();
+    renderDeck();
+  };
+  renderDeckInfo();
+  $('deck-go').disabled = count === 0;
+}
+
+function focusDeck(id) {
+  if (state.deckFocus === id) return;
+  state.deckFocus = id;
+  $('deck-catalog').querySelectorAll('.dk-tile').forEach((el) => el.classList.toggle('is-focus', el.dataset.id === id));
+  renderDeckInfo();
+}
+
+function renderDeckInfo() {
+  const el = $('deck-info');
+  const old = el.querySelector('.mini');
+  if (old) Demo.stop(old);
+  const id = state.deckFocus;
+  if (!id) { el.innerHTML = '<p class="deck-hint">碁石を押すとデッキに入る。<br>強い碁石ほどポイントが高い。</p>'; return; }
+  const ab = ABILITIES[id];
+  const desc = id === 'plain' ? '超能力のない、ふつうの碁石' : ab.desc;
+  el.innerHTML = `<span class="deck-demo mini"></span><span class="deck-text"><b>${ab.name}<span class="dk-coin ${TIER[costOf(id)]}">${costOf(id)}</span></b>${desc}</span>`;
+  if (Demo.has(id)) Demo.start(el.querySelector('.mini'), id);
+}
+
+// デッキに足す・へらす。ポイントが足りないときや3つを超えるときは、揺れて知らせる
+function changeDeck(id, d, tileEl) {
+  const deck = state.edit;
+  const n = deck[id] || 0;
+  if (d > 0) {
+    const max = id === 'plain' ? Infinity : MAX_COPIES;
+    if (n >= max || deckPoints(deck) + costOf(id) > DECK_POINTS) {
+      const why = n >= max ? '同じ碁石は3つまで' : 'ポイントが足りない';
+      bump(tileEl, why);
+      return;
+    }
+    deck[id] = n + 1;
+    Sound.pick();
+  } else {
+    if (!n) return;
+    if (n === 1) delete deck[id]; else deck[id] = n - 1;
+    Sound.select();
+  }
+  state.deckSource = null;
+  state.build.dirty = true;
+  renderDeck();
+  if (d > 0) {
+    // 足した碁石が、一覧からデッキへ飛んでいく
+    const from = tileEl && tileEl.querySelector('.dk-visual > .stone');
+    if (tileEl) { const v = tileEl.querySelector('.dk-visual'); v.classList.remove('is-pop'); void v.offsetWidth; v.classList.add('is-pop'); }
+    const to = [...$('deck-bag').querySelectorAll(`.stone[data-id="${id}"]`)].pop();
+    if (from && to) flyTo(from.getBoundingClientRect(), to, stoneHTML(deckColor(), id));
+    $('deck-meter').querySelectorAll(`.meter-bar i[data-id="${id}"]`).forEach((c) => { c.classList.remove('is-pop'); void c.offsetWidth; c.classList.add('is-pop'); });
   }
 }
 
-// 広い画面ではカードの中で、スマホではカードの下の欄で、その碁石のお試しを流す
-const isWide = () => window.matchMedia('(min-width: 900px)').matches;
-
-function focusTile(id) {
-  if (state.draftFocus === id && document.querySelector('.tile.is-demo, .tile.is-focus')) return;
-  state.draftFocus = id;
-  $('draft-pool').querySelectorAll('.tile').forEach((el) => {
-    const on = Number(el.dataset.id) === id;
-    el.classList.toggle('is-focus', on);
-    const demo = el.querySelector('.tile-demo');
-    const play = on && isWide() && Demo.has(el.dataset.ability);
-    el.classList.toggle('is-demo', play);
-    if (play) Demo.start(demo, el.dataset.ability); else { Demo.stop(demo); demo.innerHTML = ''; }
-  });
-  renderTileInfo();
-}
-
-function renderTileInfo() {
-  const card = state.offer.find((c) => c.id === state.draftFocus);
-  const el = $('tile-info');
-  const old = el.querySelector('.info-demo');
-  if (old) Demo.stop(old);
-  if (!card) { el.innerHTML = ''; return; }
-  const ab = ABILITIES[card.ability];
-  el.innerHTML = `<span class="info-demo mini"></span><span class="info-text"><b>${ab.name}</b>${ab.desc}</span>`;
-  if (!isWide() && Demo.has(card.ability)) Demo.start(el.querySelector('.info-demo'), card.ability);
-}
-
-// タッチでは、1回目で説明とお試しを見て、2回目で取る
-function onTileTap(id, pointerType) {
-  if (state.busy || notMine(draftColor())) return;
-  if ((pointerType === 'touch' || pointerType === 'pen') && state.draftFocus !== id) { focusTile(id); return; }
-  pickDraft(id);
-}
-
-async function pickDraft(id, remote = false) {
-  if (state.busy) return;
-  const color = draftColor();
-  const card = state.offer.find((c) => c.id === id);
-  if (!card) return;
-  if (state.mode === 'online' && !remote) Net.send('pick', { id });
-  const tileStone = $('draft-pool').querySelector(`.tile[data-id="${id}"] .tile-visual > .stone`);
-  const from = tileStone && tileStone.getBoundingClientRect();
-  state.picks[color].push(card);
-  state.draftStep++;
-  state.draftFocus = null;
-  state.offer = draftDone() ? [] : makeOffer();
-  state.busy = true;
-  renderDraft();
-  // 取った碁石が、カードから自分の枠へ飛んでいく
-  const slot = $(`team-${color}`).querySelectorAll('.team-piece')[state.picks[color].length - 1];
-  if (from && slot) await flyTo(from, slot, stoneHTML(color, card.ability));
-  Sound.pick();
-  state.busy = false;
-  if (draftDone()) { setTimeout(startGame, 150); return; }
-  if (runRemoteQueue()) return;
-  nextDraftTurn();
-}
-
-// CPU の番なら、少しだけ間をおいて、計測で強かった碁石から取る
-function nextDraftTurn() {
-  if (!isCpu(draftColor())) return;
-  setTimeout(() => {
-    const card = AI.draftPick(state.offer);
-    focusTile(card.id);
-    setTimeout(() => pickDraft(card.id), 200);
-  }, CPU_DRAFT_MS);
+function bump(el, why) {
+  for (const t of [el, $('deck-meter')]) {
+    if (!t) continue;
+    t.classList.remove('is-bump'); void t.offsetWidth; t.classList.add('is-bump');
+  }
+  const tip = $('deck-toast');
+  tip.textContent = why;
+  tip.classList.remove('is-show'); void tip.offsetWidth; tip.classList.add('is-show');
 }
 
 function flyTo(fromRect, toEl, html) {
@@ -826,11 +1060,13 @@ function flyTo(fromRect, toEl, html) {
 }
 
 // --- 対局 ---
-function startGame() {
+function startGame(seed = newSeed()) {
   Demo.stopAll();
+  for (const d of document.querySelectorAll('dialog[open]')) d.close();
+  setSeed(seed);
   state.phase = 'play';
   state.board = newBoard();
-  state.players = { b: makePlayer('b', state.picks.b), w: makePlayer('w', state.picks.w) };
+  state.players = { b: makePlayer('b', state.decks.b), w: makePlayer('w', state.decks.w) };
   state.turn = 'b';
   state.selected = 0;
   state.sealed = null;
@@ -964,6 +1200,7 @@ function areaCells(id, x, y, b) {
   if (area === 'row') for (let k = -R; k <= R; k++) mark(x + k, y);
   if (area === 'col') for (let k = -R; k <= R; k++) mark(x, y + k);
   if (area === 'diag') for (let k = -R; k <= R; k++) { mark(x + k, y + k); mark(x + k, y - k); }
+  if (area === 'sq5') for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) mark(x + dx, y + dy);
   if (area === 'square') for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) mark(x + dx, y + dy);
   if (area === 'down') for (let cy = y + 1; inside(x, cy) && !b[cy][x]; cy++) mark(x, cy);
   if (area === 'up') for (let cy = y - 1; inside(x, cy) && !b[cy][x]; cy--) mark(x, cy);
@@ -1017,7 +1254,9 @@ function renderPanel(color) {
         const selected = myTurn && i === state.selected;
         if (selected) cls.push('is-selected');
         if (sealed && c.ability !== 'plain') cls.push('is-sealed');
-        const tipText = sealed && c.ability !== 'plain' ? '封印されていて、ただの石になる' : ab.desc;
+        const blocked = myTurn && cardBlocked(c, color);
+        if (blocked) cls.push('is-blocked');
+        const tipText = sealed && c.ability !== 'plain' ? '封印されていて、ただの石になる' : blocked ? '相手にリーチがあるので、いまは置けない' : ab.desc;
         const tip = tipText ? `<span class="hand-tip" role="tooltip"><span class="tip-demo mini"></span><b>${ab.name}</b>${tipText}</span>` : '';
         return `<button type="button" class="${cls.join(' ')}" data-index="${i}" ${active ? '' : 'disabled'} role="radio" aria-checked="${selected}" aria-label="${ab.name}${ab.desc ? `：${ab.desc}` : ''}">
           ${stoneHTML(color, c.ability)}<span class="hand-name">${ab.name}</span>${active ? `<span class="hand-key">${i + 1}</span>` : ''}${tip}
@@ -1039,6 +1278,8 @@ function selectCard(i) {
   // 演出の途中でも選べる（先行入力）。CPU の番は選べない
   if (state.phase !== 'play' || notMine(state.turn) || state.cpuThinking) return;
   if (i < 0 || i >= state.players[state.turn].hand.length) return;
+  const card = state.players[state.turn].hand[i];
+  if (cardBlocked(card, state.turn)) { const el = $(`panel-${state.turn}`).querySelectorAll('.hand-piece')[i]; if (el) { el.classList.remove('is-bump'); void el.offsetWidth; el.classList.add('is-bump'); } return; }
   if (state.selected !== i) Sound.select();
   state.selected = i;
   renderPanel(state.turn);
@@ -1053,13 +1294,23 @@ function renderStatus() {
   if (state.phase === 'end') {
     status.innerHTML = `<span class="status-text">${state.winner ? `${playerName(state.winner)}の勝ち` : '引き分け'}</span>`
       + '<button type="button" class="btn-primary btn-small" id="again-inline">もう一局</button>';
-    $('again-inline').addEventListener('click', () => (state.mode === 'online' ? backToTitle(true) : startDraft()));
+    $('again-inline').addEventListener('click', () => (state.mode === 'online' ? backToTitle(true) : startGame()));
   } else {
     status.innerHTML = `<span class="turn-dot turn-${state.turn}"></span><span class="status-text">${playerName(state.turn)}の番</span>`;
   }
 }
 
+// 選んでいる碁石が使えないとき（スパイとリーチ）は、使える碁石を選び直す
+function fixSelection() {
+  if (state.phase !== 'play') return;
+  const hand = state.players[state.turn].hand;
+  if (hand[state.selected] && !cardBlocked(hand[state.selected], state.turn)) return;
+  const i = hand.findIndex((c) => !cardBlocked(c, state.turn));
+  state.selected = i >= 0 ? i : 0;
+}
+
 function renderGame() {
+  fixSelection();
   renderBoard();
   renderPanel('w');
   renderPanel('b');
@@ -1161,7 +1412,6 @@ function runRemoteQueue() {
   const q = state.remoteQueue;
   if (!q || !q.length || state.busy) return false;
   const { type, data } = q.shift();
-  if (type === 'pick' && state.phase === 'draft' && isRemote(draftColor())) { pickDraft(data.id, true); return true; }
   if (type === 'move' && state.phase === 'play' && isRemote(state.turn)) {
     const i = state.players[state.turn].hand.findIndex((c) => c.id === data.id);
     if (i >= 0) { state.selected = i; place(data.x, data.y, true); return true; }
@@ -1208,16 +1458,17 @@ function showResult(mover) {
   }
   $('result-text').textContent = text;
   $('result-sub').textContent = sub;
+  $('deck-again').hidden = state.mode === 'online';
   const happy = state.winner && !notMine(state.winner);
   if (happy) Sound.win(); else Sound.lose();
   $('result-dialog').showModal();
 }
 
 function renderRules() {
-  $('rules-types').textContent = `超能力の碁石は${SPECIAL_IDS.length}種類。毎回そのうち${DRAFT_POOL_SIZE}種類が1つずつ出てくる。`;
+  $('rules-types').textContent = `超能力の碁石は${SPECIAL_IDS.length}種類。${DECK_POINTS}ポイントの中で、好きな碁石を組み合わせてデッキにする。`;
   $('ability-list').innerHTML = SPECIAL_IDS.map((id) => {
     const ab = ABILITIES[id];
-    return `<dt>${stoneHTML('b', id)}${ab.name}</dt><dd>${ab.desc}</dd>`;
+    return `<dt>${stoneHTML('b', id)}${ab.name}<span class="dk-coin ${TIER[costOf(id)]}">${costOf(id)}</span></dt><dd>${ab.desc}</dd>`;
   }).join('');
 }
 
@@ -1240,8 +1491,10 @@ async function startOnline() {
       const seed = newSeed();
       const myColor = Math.random() < 0.5 ? 'b' : 'w';
       Net.send('start', { seed, guestColor: other(myColor) });
+      Net.send('deck', { deck: state.myDeck });
       beginOnline(seed, myColor);
     } else {
+      Net.send('deck', { deck: state.myDeck });
       Net.once('start', (d) => beginOnline(d.seed, d.guestColor));
     }
   } catch (err) {
@@ -1251,10 +1504,29 @@ async function startOnline() {
   }
 }
 
+// 相手のデッキが届いたら始める（両方の画面で、同じ種から同じ袋を作る）
 function beginOnline(seed, myColor) {
   if (state.phase !== 'online') return;
   state.myColor = myColor;
-  setTimeout(() => startDraft('online', seed), 500);
+  Net.once('deck', (d) => {
+    if (state.phase !== 'online') return;
+    state.mode = 'online';
+    state.decks = { [myColor]: state.myDeck, [other(myColor)]: sanitizeDeck(d.deck) };
+    setTimeout(() => startGame(seed), 500);
+  });
+}
+
+// 相手から届いたデッキを、決まりの中に収める（知らない碁石・多すぎる数・ポイントの超過を落とす）
+function sanitizeDeck(deck) {
+  const out = {};
+  let pts = 0;
+  for (const id of CATALOG) {
+    let n = Math.max(0, Math.floor(Number(deck && deck[id]) || 0));
+    if (id !== 'plain') n = Math.min(n, MAX_COPIES);
+    while (n > 0 && pts + costOf(id) * n > DECK_POINTS) n--;
+    if (n) { out[id] = n; pts += costOf(id) * n; }
+  }
+  return deckCount(out) ? out : { plain: DECK_POINTS };
 }
 
 // 左上の名前を押すと、タイトルに戻る。対局の途中なら、確かめてから
@@ -1346,23 +1618,32 @@ function init() {
   if (!$('start-pvp')) return; // ゲームの画面がないページ（比較ページなど）では、初期化しない
   renderRules();
   $('logo-btn').addEventListener('click', backToTitle);
-  $('start-pvp').addEventListener('click', (e) => expandThen(e.currentTarget, () => startDraft('pvp')));
-  $('start-cpu').addEventListener('click', (e) => expandThen(e.currentTarget, () => startDraft('cpu')));
-  $('start-online').addEventListener('click', (e) => expandThen(e.currentTarget, startOnline));
-  $('online-cancel').addEventListener('click', () => { Net.leave(); state.phase = 'title'; showScreen('title'); });
-  Net.on('pick', (d) => onRemote('pick', d));
+  $('start-pvp').addEventListener('click', (e) => expandThen(e.currentTarget, () => startSelect('pvp')));
+  $('start-cpu').addEventListener('click', (e) => expandThen(e.currentTarget, () => startSelect('cpu')));
+  $('start-online').addEventListener('click', (e) => expandThen(e.currentTarget, () => startSelect('online')));
+  $('decks-btn').addEventListener('click', () => { if (state.phase === 'play' && !window.confirm('対局の途中です。デッキの画面に行きますか？')) return; startSelect('manage'); });
+  $('select-cols').addEventListener('click', onSelectClick);
+  $('select-cols').addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target.classList.contains('sel-card')) { e.preventDefault(); onSelectClick(e); } });
+  $('select-go').addEventListener('click', confirmSelect);
+  $('deck-go').addEventListener('click', saveBuilder);
+  $('deck-back').addEventListener('click', () => leaveBuilder(false));
+  $('deck-delete').addEventListener('click', deleteBuilder);
+  $('deck-name').addEventListener('input', () => { state.build.dirty = true; });
+  $('deck-starters').addEventListener('click', (e) => { const b = e.target.closest('.starter'); if (b) loadTemplate(b.dataset.id); });
+  $('online-cancel').addEventListener('click', () => { Net.leave(); startSelect('online'); });
   Net.on('move', (d) => onRemote('move', d));
   Net.onLeave(() => {
-    if (state.mode !== 'online' || (state.phase !== 'draft' && state.phase !== 'play')) return;
+    if (state.mode !== 'online' || state.phase !== 'play') return;
     state.phase = 'end';
     state.busy = false;
     $('result-text').textContent = '接続が切れました';
     $('result-sub').textContent = '相手との接続が切れました';
     $('result-dialog').showModal();
   });
-  $('again-btn').addEventListener('click', () => (state.mode === 'online' ? backToTitle(true) : startDraft()));
+  $('again-btn').addEventListener('click', () => (state.mode === 'online' ? backToTitle(true) : startGame()));
   renderTitleArt();
   $('look-btn').addEventListener('click', () => $('result-dialog').close());
+  $('deck-again').addEventListener('click', () => startSelect(state.mode));
   $('rules-btn').addEventListener('click', () => $('rules-dialog').showModal());
   $('log-btn').addEventListener('click', () => $('log-dialog').showModal());
   const soundBtn = $('sound-btn');
@@ -1388,8 +1669,8 @@ if (typeof document !== 'undefined') {
 }
 if (typeof module !== 'undefined') {
   module.exports = {
-    setSeed, SIZE, ABILITIES, ICONS, SPECIAL_IDS, DRAFT_POOL_SIZE, DRAFT_ORDER, LINE_DIRS,
+    setSeed, SIZE, ABILITIES, ICONS, SPECIAL_IDS, LINE_DIRS,
     findWin, specialWin, lineOwner, countsFor, growth, newBoard, newPiece, playMove, resolvePlacement, snapshot, areaCells, settle, goTraps, mineCheck,
-    state, makePlayer, makeCard, makeDraftPool, effectiveAbility, canPlaceAt, inside, other, shuffle,
+    state, makePlayer, STARTERS, COST, DECK_POINTS, MAX_COPIES, costOf, deckPoints, deckCount, deckList, hasReach, cardBlocked, pushColumn, makeCard, effectiveAbility, canPlaceAt, inside, other, shuffle,
   };
 }

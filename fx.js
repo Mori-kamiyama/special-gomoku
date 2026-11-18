@@ -38,7 +38,7 @@
     invert: { name: '反転', tint: '#e8e6e1', c: ['#1f1d1a', '#8a847c', '#ffffff'], smoke: ['#2a2622', '#e8e6e1'] },
   };
   const ELEMENT_OF = {
-    bomb: 'fire', rowBomb: 'fire', colBomb: 'fire', diagBomb: 'fire',
+    nuke: 'fire', bomb: 'fire', rowBomb: 'fire', colBomb: 'fire', diagBomb: 'fire',
     push: 'wind',
     suck: 'vortex', spin: 'vortex', spinBack: 'vortex',
     gravity: 'gravity', antigravity: 'gravity',
@@ -434,6 +434,14 @@
   // 碁石ごとの衝撃の組み合わせ。shake は盤の揺れの強さ（効果が大きいほど強く）
   const RECIPE = {
     bomb: { el: 'fire', impact: (e, x, y, s) => IMPACT.fire(e, x, y, s, { pw: 1 }), shake: 1.1 },
+    // 核：爆弾の倍の大きさ。白い閃光の輪が2重に広がり、遅れてもう一度ふくらむ
+    nuke: { el: 'fire', impact: (e, x, y, s) => {
+      IMPACT.fire(e, x, y, s, { pw: 1.9 });
+      P.ring(e, x, y, s, { col: WHITE, wid: 0.3, far: 3.6, dur: 0.5 });
+      P.ring(e, x, y, s, { col: ELEMENTS.fire.c[0], wid: 0.1, far: 4.2, dur: 0.75, delay: 0.12 });
+      P.core(e, x, y, s, [WHITE, ELEMENTS.fire.c[2], ELEMENTS.fire.c[1]], { size: 2.4, delay: 0.16 });
+      P.smoke(e, x, y, s, ELEMENTS.fire.smoke, { n: 9, size: 1.6, delay: 0.2 });
+    }, shake: 2.2 },
     rowBomb: { el: 'fire', line: [[1, 0], [-1, 0]], shake: 0.9 },
     colBomb: { el: 'fire', line: [[0, 1], [0, -1]], shake: 0.9 },
     diagBomb: { el: 'fire', line: [[1, 1], [-1, 1], [1, -1], [-1, -1]], shake: 0.9 },
@@ -476,7 +484,7 @@
   const FX = {
     ELEMENTS,
     elementOf: (ability) => ELEMENT_OF[ability] || null,
-    anticipationOf: (ability) => ANTICIPATION[ELEMENT_OF[ability]] || 0.2,
+    anticipationOf: (ability) => (ability === 'nuke' ? 0.55 : ANTICIPATION[ELEMENT_OF[ability]] || 0.2),
     // 予兆：届く範囲に点線の枠。石のまわりに細い輪が脈打つ
     anticipate(t, ability, x, y, opts = {}) {
       const el = ELEMENT_OF[ability];
@@ -592,6 +600,7 @@
     push: { pre: [[1, 0, 'w'], [-1, -1, 'b'], [0, 1, 'w'], [-1, 1, 'w']], at: [0, 0] },
     suck: { pre: [[2, 0, 'w'], [-2, -2, 'b'], [0, 2, 'w'], [-2, 2, 'w']], at: [0, 0] },
     bomb: { pre: [[1, 0, 'w'], [-1, 0, 'w'], [0, -1, 'b'], [1, 1, 'w'], [-2, 2, 'w']], at: [0, 0] },
+    nuke: { pre: [[1, 0, 'w'], [-1, 1, 'w'], [0, -1, 'b'], [2, 2, 'w'], [-2, -2, 'w'], [2, -1, 'b'], [-2, 1, 'w'], [1, 2, 'b'], [-1, -2, 'w']], at: [0, 0] },
     rowBomb: { pre: [[-2, 0, 'w'], [-1, 0, 'w'], [1, 0, 'b'], [2, 0, 'w'], [0, -1, 'w'], [0, 1, 'b']], at: [0, 0] },
     colBomb: { pre: [[0, -2, 'w'], [0, -1, 'w'], [0, 1, 'b'], [0, 2, 'w'], [-1, 0, 'w'], [1, 0, 'b']], at: [0, 0] },
     diagBomb: { pre: [[-1, -1, 'w'], [2, 2, 'w'], [1, -1, 'b'], [-2, 2, 'w'], [1, 0, 'w'], [0, -1, 'b']], at: [0, 0] },

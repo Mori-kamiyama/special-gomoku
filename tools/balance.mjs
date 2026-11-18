@@ -21,20 +21,29 @@ const MAX_MOVES = 200;
 function runGames(count, depth) {
   const g = require(join(here, '..', 'script.js'));
   const AI = require(join(here, '..', 'ai.js'));
-  const { state, SPECIAL_IDS, DRAFT_ORDER, newBoard, makePlayer, makeDraftPool, playMove, shuffle } = g;
+  const { state, SPECIAL_IDS, newBoard, makePlayer, playMove, costOf, DECK_POINTS, MAX_COPIES } = g;
   const stats = Object.fromEntries(SPECIAL_IDS.map((id) => [id, { games: 0, wins: 0, draws: 0, used: 0 }]));
   const total = { b: 0, w: 0, draw: 0, moves: 0, games: 0 };
+  // デッキはランダムに組む（24ポイントまで。半分くらいの確率でただの石を足す）
+  const randomDeck = () => {
+    const deck = {};
+    let pts = 0;
+    for (let tries = 0; tries < 200 && pts < DECK_POINTS; tries++) {
+      const id = Math.random() < 0.45 ? 'plain' : SPECIAL_IDS[Math.floor(Math.random() * SPECIAL_IDS.length)];
+      if ((deck[id] || 0) >= (id === 'plain' ? 99 : MAX_COPIES) || pts + costOf(id) > DECK_POINTS) continue;
+      deck[id] = (deck[id] || 0) + 1;
+      pts += costOf(id);
+    }
+    return deck;
+  };
 
   for (let n = 0; n < count; n++) {
-    // 取り合いはランダム（どの能力も、いろいろな組み合わせで使われるように）
-    const pool = shuffle(makeDraftPool());
-    const picks = { b: [], w: [] };
-    DRAFT_ORDER.forEach((v, i) => picks[v === 0 ? 'b' : 'w'].push(pool[i]));
-    const held = { b: picks.b.map((c) => c.ability), w: picks.w.map((c) => c.ability) };
+    const decks = { b: randomDeck(), w: randomDeck() };
+    const held = { b: Object.keys(decks.b).filter((id) => id !== 'plain'), w: Object.keys(decks.w).filter((id) => id !== 'plain') };
     Object.assign(state, {
       phase: 'play', board: newBoard(), turn: 'b', selected: 0, sealed: null, jammed: null,
       lastMove: null, fx: [], winLine: null, winner: undefined, moveCount: 0, logs: [],
-      players: { b: makePlayer('b', picks.b), w: makePlayer('w', picks.w) },
+      players: { b: makePlayer('b', decks.b), w: makePlayer('w', decks.w) },
     });
     let moves = 0;
     while (state.phase === 'play' && moves < MAX_MOVES) {
@@ -115,7 +124,7 @@ if (!isMainThread) {
     `- 能力を取った側の勝率の平均：${(100 * avgRate).toFixed(1)}%（引き分けがあるので50%より低くなる）`,
     '',
     '「判定」は、95%の誤差の幅を引いても平均より高ければ「強い」、足しても低ければ「弱い」。',
-    '取り合いはランダムにしている。測れるのは CPU が使ったときの強さなので、人が使ったときとはずれることがある。',
+    'デッキはランダムに組んでいる（24ポイントまで）。測れるのは CPU が使ったときの強さなので、人が使ったときとはずれることがある。',
     '',
     '| 能力 | id | 取った試合 | 勝率 | 誤差（±） | 1試合で使った回数 | 判定 |',
     '|---|---|---:|---:|---:|---:|---|',
