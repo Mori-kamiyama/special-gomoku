@@ -1,0 +1,559 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>演出の比較（爆弾）</title>
+  <link href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Maru+Gothic:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../style.css">
+  <style>
+    body { padding: 24px 16px; }
+    h1 { font-family: var(--font-display); font-weight: 400; font-size: 24px; margin: 0 0 6px; }
+    .lead { margin: 0 0 20px; color: var(--muted); }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px; max-width: 1400px; }
+    .panel { display: flex; flex-direction: column; gap: 10px; }
+    .panel h2 { font-size: 17px; margin: 0; }
+    .panel p { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.6; }
+    .stage { position: relative; width: 100%; aspect-ratio: 1; }
+    .stage canvas { width: 100%; height: 100%; display: block; }
+    .stage .mini { position: absolute; inset: 14%; }
+    .controls { display: flex; gap: 8px; margin-bottom: 20px; }
+    .controls button { border: 2px solid var(--line); background: var(--bg); border-radius: 999px; padding: 6px 16px; cursor: pointer; font-weight: 700; }
+    .controls button.is-on { border-color: var(--accent); color: var(--accent); }
+  </style>
+</head>
+<body>
+  <h1>演出の比較：爆弾</h1>
+  <p class="lead">同じ場面（爆弾を置き、まわり8マスの石が消える）を3つの画風で。くり返し動きます。</p>
+  <div class="controls">
+    <button type="button" id="slow">スロー（1/4）</button>
+    <button type="button" id="replay">最初から</button>
+  </div>
+  <div class="grid">
+    <section class="panel">
+      <h2>今の版</h2>
+      <div class="stage" id="stage-now" style="background: var(--bg)"><span class="mini" id="mini-now"></span></div>
+      <p>ぼかした丸い粒と光。置いた瞬間に盤を暗くし、閃光と衝撃波を出す。</p>
+    </section>
+    <section class="panel">
+      <h2>A. フラットなモーショングラフィックス風</h2>
+      <div class="stage"><canvas id="cv-a"></canvas></div>
+      <p>くっきりした図形だけで描く。予兆（導火線が光って震える）→ 止め → 衝撃（白い円・太い輪・尖った炎・破片・集中する線）→ 余韻（煙が縮んで消える）。消えるときは薄くせず縮める。まわりの石も弾け、離れた石は揺れる。</p>
+    </section>
+    <section class="panel">
+      <h2>A′. Aの改良（丸い形だけで）</h2>
+      <div class="stage"><canvas id="cv-a2"></canvas></div>
+      <p>三角や星形のギザギザをやめ、円・輪・先の丸い線・なめらかな曲線だけで描く。線は伸びてから根元から消える。輪は広がりながら弧に割れる。炎は丸いしずく形を3色ずらして重ねる。少し行き過ぎてから戻る。</p>
+    </section>
+    <section class="panel">
+      <h2>A″. A′をさらに練った版（Claude）</h2>
+      <div class="stage"><canvas id="cv-a3"></canvas></div>
+      <p id="note-a3">作っています…</p>
+    </section>
+    <section class="panel">
+      <h2>C. Codex 版</h2>
+      <div class="stage"><canvas id="cv-c"></canvas></div>
+      <p id="note-c">Codex が作っています…（tools/fx-codex.js ができると、ここに出ます）</p>
+    </section>
+    <section class="panel">
+      <h2>B. 手描きアニメ風</h2>
+      <div class="stage"><canvas id="cv-b"></canvas></div>
+      <p>1秒12コマのコマ送り。墨の輪郭と2色の塗り分け。衝撃の瞬間だけ白黒を反転させ（アニメの「インパクトフレーム」）、集中線を出す。炎と煙は毎コマ形が変わる。</p>
+    </section>
+  </div>
+
+  <script src="../sound.js"></script>
+  <script src="fx-a3.js" defer onerror="this.remove()"></script>
+  <script src="fx-codex.js" defer onerror="this.remove()"></script>
+  <script src="../script.js"></script>
+  <script src="../fx.js"></script>
+  <script>
+  'use strict';
+  // ===== 共通：7×7 の盤と、時間で決まる絵 =====
+  const N = 7;
+  const INK = '#1f1d1a', ACC = '#e5533d', ORANGE = '#ff9f1c', YELLOW = '#ffd23f', CREAM = '#fff6dc';
+  const BOARD = '#efd6a3', LINE = 'rgba(138,106,58,0.75)';
+  const LOOP = 2.8;          // 1回の長さ（秒）
+  const T_DROP = 0.45;       // 爆弾が落ちてくる
+  const T_LAND = 0.6;        // 着地
+  const T_BOOM = 0.98;       // 爆発（その前の0.06秒が止め）
+  // 先に置いてある石：[x, y, 色, 爆発で消えるか]
+  const PRE = [[2, 3, 'w', 1], [4, 3, 'w', 1], [3, 2, 'b', 1], [4, 4, 'w', 1], [2, 4, 'b', 1], [2, 2, 'w', 1], [1, 1, 'w', 0], [5, 5, 'b', 0], [5, 2, 'b', 0], [1, 5, 'w', 0]];
+  let speed = 1;
+  let startAt = performance.now();
+
+  const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const easeOut = (t) => 1 - Math.pow(1 - clamp(t), 3);
+  const easeIn = (t) => Math.pow(clamp(t), 2.2);
+  const backOut = (t) => { t = clamp(t); const s = 1.9; return 1 + (s + 1) * Math.pow(t - 1, 3) + s * Math.pow(t - 1, 2); };
+  // 決まった乱数（毎ループ同じ形にする）
+  function rng(seed) { let x = seed * 9301 + 49297; return () => { x = (x * 9301 + 49297) % 233280; return x / 233280; }; }
+
+  function setup(canvas) {
+    const dpr = Math.min(devicePixelRatio || 1, 2);
+    const r = canvas.getBoundingClientRect();
+    canvas.width = r.width * dpr; canvas.height = r.height * dpr;
+    const c = canvas.getContext('2d');
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { c, w: r.width, h: r.height };
+  }
+
+  function drawBoard(c, w, ox, oy, cell) {
+    c.fillStyle = BOARD;
+    c.beginPath(); c.roundRect(ox - cell * 0.5, oy - cell * 0.5, cell * N, cell * N, 6); c.fill();
+    c.strokeStyle = LINE; c.lineWidth = 1;
+    for (let i = 0; i < N; i++) {
+      c.beginPath(); c.moveTo(ox, oy + i * cell); c.lineTo(ox + (N - 1) * cell, oy + i * cell); c.stroke();
+      c.beginPath(); c.moveTo(ox + i * cell, oy); c.lineTo(ox + i * cell, oy + (N - 1) * cell); c.stroke();
+    }
+  }
+  function stone(c, x, y, r, color, { outline = color === 'w', ink = INK, lw = 1.5 } = {}) {
+    if (r <= 0.3) return;
+    c.fillStyle = color === 'b' ? INK : '#fff';
+    c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); c.fill();
+    if (outline) { c.strokeStyle = ink; c.lineWidth = lw; c.stroke(); }
+  }
+  // 爆弾のアイコン（白い放射）
+  function bombIcon(c, x, y, r, col = '#fff') {
+    c.strokeStyle = col; c.lineWidth = Math.max(1.5, r * 0.14); c.lineCap = 'round';
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      c.beginPath(); c.moveTo(x + Math.cos(a) * r * 0.25, y + Math.sin(a) * r * 0.25); c.lineTo(x + Math.cos(a) * r * 0.55, y + Math.sin(a) * r * 0.55); c.stroke();
+    }
+  }
+
+  // ===== A. フラットなモーショングラフィックス風 =====
+  function drawA(c, w, h, t) {
+    const cell = w / (N + 0.6), ox = (w - cell * (N - 1)) / 2, oy = ox;
+    const P = (i, j) => [ox + i * cell, oy + j * cell];
+    const R = cell * 0.42;
+    const sinceBoom = t - T_BOOM;
+    // 盤の揺れ（強さは爆発の直後に最大、すぐ収まる）
+    let sx = 0, sy = 0;
+    if (sinceBoom > 0 && sinceBoom < 0.35) { const a = 7 * (1 - sinceBoom / 0.35); sx = Math.sin(sinceBoom * 90) * a; sy = Math.cos(sinceBoom * 77) * a * 0.6; }
+    c.save(); c.translate(sx, sy);
+    drawBoard(c, w, ox, oy, cell);
+    const [cx, cy] = P(3, 3);
+
+    // 予兆：届く範囲を、平らな赤で区切って見せる
+    if (t > T_LAND && t < T_BOOM + 0.05) {
+      const k = easeOut((t - T_LAND) / 0.15);
+      c.fillStyle = `rgba(229,83,61,${0.16 * k})`;
+      c.fillRect(cx - cell * 1.5, cy - cell * 1.5, cell * 3, cell * 3);
+    }
+    // 焦げ跡（余韻）
+    if (sinceBoom > 0.1 && t < LOOP - 0.3) {
+      const k = easeOut((sinceBoom - 0.1) / 0.3);
+      c.fillStyle = 'rgba(60,40,25,0.22)';
+      c.beginPath(); c.arc(cx, cy, cell * 0.8 * k, 0, Math.PI * 2); c.fill();
+    }
+
+    // 先にある石
+    for (const [i, j, col, dies] of PRE) {
+      let [x, y] = P(i, j);
+      let r = R, rot = 0;
+      if (sinceBoom > 0) {
+        const dx = x - cx, dy = y - cy, d = Math.hypot(dx, dy) || 1;
+        if (dies) {
+          // 弾けて飛び、縮んで消える
+          const k = clamp(sinceBoom / 0.32);
+          x += (dx / d) * cell * 0.5 * easeOut(k); y += (dy / d) * cell * 0.5 * easeOut(k);
+          r = R * (k < 0.15 ? lerp(1, 1.2, k / 0.15) : lerp(1.2, 0, (k - 0.15) / 0.85));
+          rot = k * 4;
+        } else {
+          // 離れた石は、押されて揺れて戻る
+          const k = clamp(sinceBoom / 0.45);
+          const push = Math.sin(k * Math.PI * 3) * (1 - k) * cell * 0.08;
+          x += (dx / d) * push; y += (dy / d) * push;
+        }
+      }
+      stone(c, x, y, r, col);
+    }
+
+    // 爆弾の石：落ちる → つぶれて着く → 震えて光る → 消える
+    if (t > T_DROP && sinceBoom < 0.02) {
+      let y = cy, sxk = 1, syk = 1, jitter = 0;
+      if (t < T_LAND) { const k = easeIn((t - T_DROP) / (T_LAND - T_DROP)); y = lerp(cy - cell * 1.6, cy, k); }
+      else if (t < T_LAND + 0.08) { const k = (t - T_LAND) / 0.08; sxk = lerp(1.25, 1, k); syk = lerp(0.75, 1, k); }
+      else { const k = clamp((t - T_LAND - 0.08) / (T_BOOM - T_LAND - 0.08)); jitter = k * k * 3; sxk = syk = 1 + k * 0.18; }
+      // 影
+      c.fillStyle = 'rgba(0,0,0,0.12)';
+      c.beginPath(); c.ellipse(cx, cy + R * 0.25, R * (t < T_LAND ? lerp(0.4, 1, easeIn((t - T_DROP) / (T_LAND - T_DROP))) : 1), R * 0.45, 0, 0, Math.PI * 2); c.fill();
+      const jx = (Math.random() - 0.5) * jitter, jy = (Math.random() - 0.5) * jitter;
+      c.save(); c.translate(cx + jx, y + jy); c.scale(sxk, syk);
+      // 震えの間は、赤い輪が点滅する
+      if (t > T_LAND + 0.08 && Math.floor(t * 18) % 2 === 0) { c.strokeStyle = ACC; c.lineWidth = 4; c.beginPath(); c.arc(0, 0, R + 4, 0, Math.PI * 2); c.stroke(); }
+      stone(c, 0, 0, R, 'b'); bombIcon(c, 0, 0, R);
+      c.restore();
+    }
+
+    if (sinceBoom > -0.06 && sinceBoom < 0) {
+      // 止め：白い円が出て、すべてが一瞬止まる
+      c.fillStyle = '#fff';
+      c.beginPath(); c.arc(cx, cy, R * 1.25, 0, Math.PI * 2); c.fill();
+    }
+    if (sinceBoom >= 0) {
+      const r2 = rng(7);
+      // 白い芯 → 黄 → 消える（縮む）
+      const kc = clamp(sinceBoom / 0.14);
+      c.fillStyle = kc < 0.4 ? '#fff' : YELLOW;
+      c.beginPath(); c.arc(cx, cy, R * 1.5 * (1 - easeIn(kc)), 0, Math.PI * 2); c.fill();
+      // 太い衝撃の輪（線が細くなって消える）
+      const kr = clamp(sinceBoom / 0.32);
+      if (kr < 1) { c.strokeStyle = ORANGE; c.lineWidth = cell * 0.36 * (1 - kr); c.beginPath(); c.arc(cx, cy, lerp(R, cell * 2.1, easeOut(kr)), 0, Math.PI * 2); c.stroke(); }
+      // 尖った炎の舌（外→中の3色）
+      for (let i = 0; i < 9; i++) {
+        const a = (i / 9) * Math.PI * 2 + r2() * 0.4;
+        const k = clamp((sinceBoom - r2() * 0.04) / 0.42);
+        if (k <= 0 || k >= 1) continue;
+        const len = cell * lerp(0.4, 1.35, easeOut(k)) * (0.8 + r2() * 0.4);
+        const wid = cell * 0.32 * (1 - easeIn(k));
+        const layers = [[ACC, 1], [ORANGE, 0.72], [YELLOW, 0.42]];
+        for (const [col, f] of layers) {
+          c.fillStyle = col;
+          c.beginPath();
+          c.moveTo(cx + Math.cos(a) * len * f * 1.05, cy + Math.sin(a) * len * f * 1.05);
+          c.quadraticCurveTo(cx + Math.cos(a + 0.5) * len * 0.45 * f, cy + Math.sin(a + 0.5) * len * 0.45 * f, cx + Math.cos(a + Math.PI / 2) * wid * f, cy + Math.sin(a + Math.PI / 2) * wid * f);
+          c.lineTo(cx + Math.cos(a - Math.PI / 2) * wid * f, cy + Math.sin(a - Math.PI / 2) * wid * f);
+          c.quadraticCurveTo(cx + Math.cos(a - 0.5) * len * 0.45 * f, cy + Math.sin(a - 0.5) * len * 0.45 * f, cx + Math.cos(a) * len * f * 1.05, cy + Math.sin(a) * len * f * 1.05);
+          c.fill();
+        }
+      }
+      // 外へ走る細い線（スピード線）
+      const kl = clamp(sinceBoom / 0.22);
+      if (kl < 1) {
+        c.strokeStyle = INK; c.lineCap = 'round';
+        for (let i = 0; i < 14; i++) {
+          const a = (i / 14) * Math.PI * 2 + 0.11;
+          const r0 = lerp(R * 1.2, cell * 2.2, easeOut(kl)), r1 = r0 + cell * 0.5 * (1 - kl);
+          c.lineWidth = 2.5 * (1 - kl);
+          c.beginPath(); c.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0); c.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1); c.stroke();
+        }
+      }
+      // 三角の破片（回りながら飛んで、縮んで消える）
+      for (let i = 0; i < 12; i++) {
+        const a = r2() * Math.PI * 2, v = cell * (1.4 + r2() * 1.4), k = clamp(sinceBoom / 0.6);
+        if (k >= 1) continue;
+        const d = v * easeOut(k), s = cell * 0.12 * (1 - k);
+        const x = cx + Math.cos(a) * d, y = cy + Math.sin(a) * d + cell * 0.6 * k * k;
+        c.save(); c.translate(x, y); c.rotate(k * 9 + i);
+        c.fillStyle = i % 3 === 0 ? INK : i % 3 === 1 ? ORANGE : ACC;
+        c.beginPath(); c.moveTo(0, -s); c.lineTo(s, s); c.lineTo(-s, s * 0.6); c.closePath(); c.fill();
+        c.restore();
+      }
+      // 煙：くっきりした丸のかたまりが、ふくらんで昇り、縮んで消える
+      for (let i = 0; i < 5; i++) {
+        const k = clamp((sinceBoom - 0.12 - i * 0.04) / 0.9);
+        if (k <= 0 || k >= 1) continue;
+        const a = -Math.PI / 2 + (i - 2) * 0.55;
+        const x = cx + Math.cos(a) * cell * 0.55 * easeOut(k), y = cy + Math.sin(a) * cell * 0.4 * easeOut(k) - cell * 0.7 * k;
+        const r = cell * 0.36 * (k < 0.3 ? backOut(k / 0.3) : 1 - easeIn((k - 0.3) / 0.7));
+        c.fillStyle = i % 2 ? '#5a524a' : '#463f39';
+        c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); c.fill();
+      }
+    }
+    c.restore();
+  }
+
+
+  // ===== A′. Aの改良：丸い形だけで描く =====
+  // しずく形（先が上、下が丸い）。炎の形に使う
+  function drop(c, x, y, r, h, ang = 0) {
+    c.save(); c.translate(x, y); c.rotate(ang);
+    c.beginPath();
+    c.moveTo(0, -h);
+    c.bezierCurveTo(r * 0.55, -h * 0.55, r, -r * 0.2, r, 0);
+    c.arc(0, 0, r, 0, Math.PI);
+    c.bezierCurveTo(-r, -r * 0.2, -r * 0.55, -h * 0.55, 0, -h);
+    c.closePath(); c.fill();
+    c.restore();
+  }
+  // 先の丸い線：t0〜t1 の区間だけ描く（伸びてから根元から消える）
+  function capsule(c, x, y, a, r0, r1, t0, t1, width, col) {
+    if (t1 <= t0) return;
+    const ra = lerp(r0, r1, t0), rb = lerp(r0, r1, t1);
+    c.strokeStyle = col; c.lineWidth = width; c.lineCap = 'round';
+    c.beginPath(); c.moveTo(x + Math.cos(a) * ra, y + Math.sin(a) * ra); c.lineTo(x + Math.cos(a) * rb, y + Math.sin(a) * rb); c.stroke();
+  }
+  function drawA2(c, w, h, t) {
+    const cell = w / (N + 0.6), ox = (w - cell * (N - 1)) / 2, oy = ox;
+    const P = (i, j) => [ox + i * cell, oy + j * cell];
+    const R = cell * 0.42;
+    const sb = t - T_BOOM;
+    let sx = 0, sy = 0;
+    if (sb > 0 && sb < 0.3) { const a = 6 * Math.pow(1 - sb / 0.3, 2); sx = Math.sin(sb * 95) * a; sy = Math.cos(sb * 70) * a * 0.6; }
+    c.save(); c.translate(sx, sy);
+    drawBoard(c, w, ox, oy, cell);
+    const [cx, cy] = P(3, 3);
+
+    // 予兆：届く範囲に、角の丸い枠が内側から描かれる
+    if (t > T_LAND && sb < 0.04) {
+      const k = backOut((t - T_LAND) / 0.18);
+      const half = cell * 1.5 * clamp(k, 0, 1.08);
+      c.fillStyle = 'rgba(229,83,61,0.12)';
+      c.strokeStyle = 'rgba(229,83,61,0.55)'; c.lineWidth = 2; c.setLineDash([6, 6]); c.lineDashOffset = -t * 40;
+      c.beginPath(); c.roundRect(cx - half, cy - half, half * 2, half * 2, cell * 0.25); c.fill(); c.stroke();
+      c.setLineDash([]);
+    }
+    // 焦げ跡：丸く広がって、ゆっくり縮む
+    if (sb > 0.08) {
+      const k = clamp((sb - 0.08) / 0.25), out = clamp((t - (LOOP - 0.5)) / 0.4);
+      c.fillStyle = 'rgba(70,45,25,0.16)';
+      c.beginPath(); c.arc(cx, cy, cell * 0.95 * backOut(k) * (1 - easeIn(out)), 0, Math.PI * 2); c.fill();
+    }
+
+    // 先にある石：まわりの石はふくらんでから、小さな丸3つに割れて消える。離れた石は押されて揺れる
+    for (const [i, j, col, dies] of PRE) {
+      let [x, y] = P(i, j);
+      const dx = x - cx, dy = y - cy, d = Math.hypot(dx, dy) || 1, ux = dx / d, uy = dy / d;
+      if (sb > 0 && dies) {
+        const k = clamp((sb - 0.02) / 0.45);
+        if (k < 0.18) { stone(c, x + ux * cell * 0.15 * easeOut(k / 0.18), y + uy * cell * 0.15 * easeOut(k / 0.18), R * lerp(1, 1.18, easeOut(k / 0.18)), col); continue; }
+        const kk = (k - 0.18) / 0.82;
+        for (let n = 0; n < 3; n++) {
+          const a = Math.atan2(uy, ux) + (n - 1) * 0.9;
+          const dist = cell * (0.15 + 0.55 * easeOut(kk));
+          stone(c, x + Math.cos(a) * dist, y + Math.sin(a) * dist, R * 0.45 * (1 - easeIn(kk)), col, { lw: 1.2 });
+        }
+        continue;
+      }
+      if (sb > 0 && !dies) {
+        const k = clamp(sb / 0.5);
+        const push = Math.sin(k * Math.PI * 2.5) * Math.pow(1 - k, 2) * cell * 0.09;
+        x += ux * push; y += uy * push;
+      }
+      stone(c, x, y, R, col);
+    }
+
+    // 爆弾の石：落ちる → つぶれて着いて少し跳ねる → ふくらみながら震える
+    if (t > T_DROP && sb < 0) {
+      let y = cy, sxk = 1, syk = 1, jit = 0;
+      if (t < T_LAND) { const k = easeIn((t - T_DROP) / (T_LAND - T_DROP)); y = lerp(cy - cell * 1.6, cy, k); syk = lerp(1, 1.12, k); sxk = lerp(1, 0.92, k); }
+      else if (t < T_LAND + 0.14) { const k = (t - T_LAND) / 0.14; const sq = Math.sin(k * Math.PI) * (1 - k * 0.4); sxk = 1 + 0.22 * sq; syk = 1 - 0.22 * sq; }
+      else { const k = clamp((t - T_LAND - 0.14) / (T_BOOM - T_LAND - 0.14)); jit = k * k * 2.5; sxk = syk = 1 + easeIn(k) * 0.2; }
+      c.fillStyle = 'rgba(0,0,0,0.12)';
+      c.beginPath(); c.ellipse(cx, cy + R * 0.3, R * 0.95, R * 0.4, 0, 0, Math.PI * 2); c.fill();
+      c.save(); c.translate(cx + (Math.random() - 0.5) * jit, y + (Math.random() - 0.5) * jit); c.scale(sxk, syk);
+      // 震えている間、まわりに細い輪が脈打つ
+      if (t > T_LAND + 0.14) {
+        const k = ((t - T_LAND) * 3) % 1;
+        c.strokeStyle = `rgba(229,83,61,${1 - k})`; c.lineWidth = 2;
+        c.beginPath(); c.arc(0, 0, R * (1.1 + k * 0.6), 0, Math.PI * 2); c.stroke();
+      }
+      stone(c, 0, 0, R, 'b'); bombIcon(c, 0, 0, R);
+      c.restore();
+    }
+    if (sb >= -0.06 && sb < 0) {
+      // 止め：白い円がぽんと出る
+      c.fillStyle = '#fff'; c.beginPath(); c.arc(cx, cy, R * 1.3, 0, Math.PI * 2); c.fill();
+    }
+
+    if (sb >= 0) {
+      const g = rng(21);
+      // 1) 芯：白 → 黄 → 橙と、色を段で変えながら縮む
+      const kc = clamp(sb / 0.22);
+      if (kc < 1) {
+        c.fillStyle = kc < 0.25 ? '#fff' : kc < 0.55 ? YELLOW : ORANGE;
+        c.beginPath(); c.arc(cx, cy, R * 1.45 * (1 - easeIn(kc)), 0, Math.PI * 2); c.fill();
+      }
+      // 2) 輪：広がりながら細くなり、途中で8つの弧に割れる
+      const kr = clamp(sb / 0.42);
+      if (kr < 1) {
+        const r = lerp(R * 1.1, cell * 2.2, easeOut(kr));
+        c.strokeStyle = ORANGE; c.lineCap = 'round'; c.lineWidth = Math.max(0.5, cell * 0.22 * (1 - kr));
+        if (kr < 0.35) { c.beginPath(); c.arc(cx, cy, r, 0, Math.PI * 2); c.stroke(); }
+        else {
+          const gap = lerp(0.05, 0.55, (kr - 0.35) / 0.65);
+          for (let i = 0; i < 8; i++) {
+            const a0 = (i / 8) * Math.PI * 2 + kr * 0.6;
+            c.beginPath(); c.arc(cx, cy, r, a0 + gap * 0.5, a0 + Math.PI / 4 - gap * 0.5); c.stroke();
+          }
+        }
+      }
+      // 3) 先の丸い線：伸びて、根元から消える。長さと太さをばらす
+      for (let i = 0; i < 12; i++) {
+        const a = (i / 12) * Math.PI * 2 + 0.13 + (g() - 0.5) * 0.2;
+        const delay = g() * 0.04, len = 0.75 + g() * 0.5;
+        const k = clamp((sb - delay) / 0.34);
+        if (k <= 0 || k >= 1) continue;
+        const head = easeOut(clamp(k / 0.55)), tail = easeIn(clamp((k - 0.2) / 0.8));
+        capsule(c, cx, cy, a, R * 1.2, cell * 2.0 * len, tail, head, i % 3 === 0 ? 4 : 2.5, i % 2 ? ACC : ORANGE);
+      }
+      // 4) 炎：丸いしずく形を、赤・橙・黄の順に少しずつ遅らせて重ねる。行き過ぎてから縮む
+      const flames = [[-0.55, 0.9], [0, 1.25], [0.55, 0.95], [-0.95, 0.6], [0.95, 0.65]];
+      const layers = [[ACC, 1, 0], [ORANGE, 0.7, 0.04], [YELLOW, 0.42, 0.08]];
+      for (const [col, f, dl] of layers) {
+        c.fillStyle = col;
+        for (const [ang, hh] of flames) {
+          const k = clamp((sb - 0.04 - dl) / 0.55);
+          if (k <= 0 || k >= 1) continue;
+          const grow = k < 0.35 ? backOut(k / 0.35) : 1 - easeIn((k - 0.35) / 0.65);
+          const r = cell * 0.34 * f * grow, hgt = cell * (0.75 * hh) * f * grow + r;
+          drop(c, cx + Math.sin(ang) * cell * 0.25 * f, cy - cell * 0.1 * k, r, hgt, ang * 0.55);
+        }
+      }
+      // 5) 粒：小さな丸が飛び、少し遅れて、さらに小さな丸が続く
+      for (let i = 0; i < 10; i++) {
+        const a = g() * Math.PI * 2, v = cell * (1.3 + g() * 1.1);
+        for (const [lag, sz] of [[0, 0.1], [0.05, 0.055]]) {
+          const k = clamp((sb - lag) / 0.55);
+          if (k <= 0 || k >= 1) continue;
+          const d = v * easeOut(k);
+          c.fillStyle = i % 3 === 0 ? INK : i % 3 === 1 ? ACC : ORANGE;
+          c.beginPath(); c.arc(cx + Math.cos(a) * d, cy + Math.sin(a) * d + cell * 0.35 * k * k, cell * sz * (1 - easeIn(k)), 0, Math.PI * 2); c.fill();
+        }
+      }
+      // 6) 煙：丸が重なってふくらみ、昇りながら縮んで消える
+      for (let i = 0; i < 6; i++) {
+        const k = clamp((sb - 0.16 - i * 0.035) / 0.95);
+        if (k <= 0 || k >= 1) continue;
+        const a = -Math.PI / 2 + (i - 2.5) * 0.5;
+        const x = cx + Math.cos(a) * cell * 0.5 * easeOut(k), y = cy + Math.sin(a) * cell * 0.35 * easeOut(k) - cell * 0.75 * easeOut(k);
+        const r = cell * (0.3 + (i % 2) * 0.08) * (k < 0.25 ? backOut(k / 0.25) : 1 - easeIn((k - 0.25) / 0.75));
+        c.fillStyle = i % 2 ? '#5d554c' : '#4a433c';
+        c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); c.fill();
+      }
+    }
+    c.restore();
+  }
+
+  // ===== B. 手描きアニメ風（1秒12コマ） =====
+  function jaggedBlob(c, x, y, r, seed, spikes = 9, amp = 0.35) {
+    const g = rng(seed);
+    c.beginPath();
+    for (let i = 0; i <= spikes * 2; i++) {
+      const a = (i / (spikes * 2)) * Math.PI * 2;
+      const rr = r * (i % 2 ? 1 - amp * g() : 1 + amp * 0.4 * g());
+      const px = x + Math.cos(a) * rr, py = y + Math.sin(a) * rr;
+      i ? c.lineTo(px, py) : c.moveTo(px, py);
+    }
+    c.closePath();
+  }
+  function cloud(c, x, y, r, seed) {
+    const g = rng(seed);
+    c.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2 + g() * 0.5;
+      c.moveTo(x + Math.cos(a) * r * 0.55 + r * 0.42, y + Math.sin(a) * r * 0.55);
+      c.arc(x + Math.cos(a) * r * 0.55, y + Math.sin(a) * r * 0.55, r * (0.38 + g() * 0.12), 0, Math.PI * 2);
+    }
+  }
+  function drawB(c, w, h, tSmooth) {
+    const t = Math.floor(tSmooth * 12) / 12; // 1秒12コマ
+    const frame = Math.floor(tSmooth * 12);
+    const cell = w / (N + 0.6), ox = (w - cell * (N - 1)) / 2, oy = ox;
+    const P = (i, j) => [ox + i * cell, oy + j * cell];
+    const R = cell * 0.42;
+    const [cx, cy] = P(3, 3);
+    const sinceBoom = t - T_BOOM;
+    const impactFrame = sinceBoom >= 0 && sinceBoom < 2 / 12; // 白黒を反転する2コマ
+
+    let sx = 0, sy = 0;
+    if (sinceBoom > 0 && sinceBoom < 0.4) { const a = 8 * (1 - sinceBoom / 0.4); sx = (frame % 2 ? 1 : -1) * a; sy = (frame % 3 - 1) * a * 0.5; }
+    c.save(); c.translate(sx, sy);
+
+    if (impactFrame) {
+      // インパクトフレーム：黒地に、白い爆発のシルエット
+      c.fillStyle = INK; c.fillRect(-20, -20, w + 40, h + 40);
+      c.fillStyle = '#fff';
+      jaggedBlob(c, cx, cy, cell * (frame % 2 ? 1.9 : 1.5), frame + 3, 11, 0.45); c.fill();
+      for (const [i, j] of PRE) { const [x, y] = P(i, j); c.strokeStyle = '#fff'; c.lineWidth = 2; c.beginPath(); c.arc(x, y, R, 0, Math.PI * 2); c.stroke(); }
+      c.restore();
+      return;
+    }
+
+    drawBoard(c, w, ox, oy, cell);
+    // 先にある石
+    for (const [i, j, col, dies] of PRE) {
+      let [x, y] = P(i, j);
+      if (dies && sinceBoom > 0) continue; // 消えた
+      if (!dies && sinceBoom > 0 && sinceBoom < 0.5) { const d = Math.hypot(x - cx, y - cy); x += ((x - cx) / d) * (frame % 2 ? 3 : -2); }
+      stone(c, x, y, R, col, { outline: true, lw: 2.5 });
+    }
+    // 爆弾の石（ためは、コマごとにふくらむ）
+    if (t > T_DROP && sinceBoom < 0) {
+      let y = cy, s = 1;
+      if (t < T_LAND) y = lerp(cy - cell * 1.6, cy, easeIn((t - T_DROP) / (T_LAND - T_DROP)));
+      else s = 1 + (frame % 2) * 0.1 + clamp((t - T_LAND) / 0.4) * 0.12;
+      c.save(); c.translate(cx, y); c.scale(s, s);
+      stone(c, 0, 0, R, 'b', { outline: true, lw: 2.5 });
+      bombIcon(c, 0, 0, R);
+      // 導火線の火花（手描きの星）
+      if (t > T_LAND) { c.fillStyle = YELLOW; c.strokeStyle = INK; c.lineWidth = 2; jaggedBlob(c, R * 0.7, -R * 0.8, R * 0.32, frame, 5, 0.6); c.fill(); c.stroke(); }
+      c.restore();
+    }
+    if (sinceBoom >= 2 / 12) {
+      // 炎：毎コマ形の変わるギザギザ。墨の輪郭＋2色の塗り分け
+      const k = clamp((sinceBoom - 2 / 12) / 0.75);
+      if (k < 1) {
+        const r = cell * lerp(1.7, 0.6, easeIn(k));
+        c.lineWidth = 3; c.strokeStyle = INK;
+        c.fillStyle = ACC; jaggedBlob(c, cx, cy - cell * 0.3 * k, r, frame * 7 + 1, 10, 0.42); c.fill(); c.stroke();
+        c.fillStyle = ORANGE; jaggedBlob(c, cx, cy - cell * 0.35 * k, r * 0.68, frame * 7 + 2, 8, 0.4); c.fill();
+        c.fillStyle = YELLOW; jaggedBlob(c, cx, cy - cell * 0.4 * k, r * 0.38, frame * 7 + 3, 6, 0.35); c.fill();
+      }
+      // 煙：もこもこの輪郭、コマごとに揺れる
+      const ks = clamp((sinceBoom - 0.35) / 1.1);
+      if (ks > 0 && ks < 1) {
+        const r = cell * 0.9 * (ks < 0.3 ? ks / 0.3 : 1 - (ks - 0.3) / 0.7);
+        c.fillStyle = '#8c857c'; c.strokeStyle = INK; c.lineWidth = 2.5;
+        cloud(c, cx + (frame % 2), cy - cell * 0.9 * ks, r, frame * 3); c.fill(); c.stroke();
+      }
+      // 破片：輪郭つきの三角が、コマ送りで飛ぶ
+      const r2 = rng(11);
+      for (let i = 0; i < 9; i++) {
+        const a = r2() * Math.PI * 2, v = cell * (1.6 + r2()), kk = clamp(sinceBoom / 0.55);
+        if (kk >= 1) continue;
+        const d = v * easeOut(kk), x = cx + Math.cos(a) * d, y = cy + Math.sin(a) * d, s = cell * 0.13;
+        c.save(); c.translate(x, y); c.rotate(frame * 1.3 + i);
+        c.fillStyle = i % 2 ? '#fff' : INK; c.strokeStyle = INK; c.lineWidth = 2;
+        c.beginPath(); c.moveTo(0, -s); c.lineTo(s, s * 0.8); c.lineTo(-s * 0.9, s * 0.5); c.closePath(); c.fill(); c.stroke();
+        c.restore();
+      }
+      // 集中線（マンガの効果線）
+      if (sinceBoom < 0.35) {
+        const g = rng(frame + 50);
+        c.strokeStyle = INK;
+        for (let i = 0; i < 36; i++) {
+          const a = (i / 36) * Math.PI * 2 + g() * 0.08;
+          const r0 = w * (0.36 + g() * 0.08), r1 = w * 0.75;
+          c.lineWidth = 1 + g() * 2.5;
+          c.beginPath(); c.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0); c.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1); c.stroke();
+        }
+      }
+    }
+    c.restore();
+  }
+
+  // ===== 動かす =====
+  const A = { canvas: document.getElementById('cv-a'), draw: drawA };
+  const B = { canvas: document.getElementById('cv-b'), draw: drawB };
+  const A2 = { canvas: document.getElementById('cv-a2'), draw: drawA2 };
+  const A3 = { canvas: document.getElementById('cv-a3'), draw: (...a) => (typeof drawA3 === 'function' ? drawA3(...a) : null) };
+  const CX = { canvas: document.getElementById('cv-c'), draw: (...a) => (typeof drawCodex === 'function' ? drawCodex(...a) : null) };
+  function frame(now) {
+    const t = (((now - startAt) / 1000) * speed) % LOOP;
+    for (const p of [A, A2, A3, CX, B]) {
+      const { c, w, h } = p.ctx && p.ctx.w === p.canvas.getBoundingClientRect().width ? p.ctx : (p.ctx = setup(p.canvas));
+      c.clearRect(-20, -20, w + 40, h + 40);
+      p.draw(c, w, h, t);
+    }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  // 今の版：ゲームのお試しの盤（fx.js）をそのまま使う
+  addEventListener('load', () => Demo.start(document.getElementById('mini-now'), 'bomb'));
+
+  document.getElementById('slow').addEventListener('click', (e) => {
+    const now = performance.now();
+    const t = (((now - startAt) / 1000) * speed) % LOOP;
+    speed = speed === 1 ? 0.25 : 1;
+    startAt = now - (t / speed) * 1000;
+    e.currentTarget.classList.toggle('is-on', speed !== 1);
+  });
+  document.getElementById('replay').addEventListener('click', () => { startAt = performance.now(); });
+  </script>
+</body>
+</html>
