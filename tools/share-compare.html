@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>共有画像くらべ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Maru+Gothic:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  :root { --bg: #f7f4ee; --text: #1f1d1a; --muted: #8b857b; --line: #e2ddd3; --accent: #e5533d; --card: #efebe3; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #1b1a18; --text: #efe9df; --muted: #9a9286; --line: #36332e; --card: #252320; } }
+  :root[data-theme="dark"] { --bg: #1b1a18; --text: #efe9df; --muted: #9a9286; --line: #36332e; --card: #252320; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: "Zen Maru Gothic", system-ui, sans-serif; font-weight: 500; line-height: 1.6; }
+  main { max-width: 1280px; margin: 0 auto; padding: 28px 16px 110px; }
+  h1 { font-family: "Dela Gothic One", sans-serif; font-weight: 400; font-size: clamp(24px, 5vw, 36px); margin: 0 0 6px; }
+  .lead { margin: 0 0 14px; color: var(--muted); font-size: 14px; max-width: 52em; }
+  .tools { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+  .tools button { border: none; border-radius: 99px; padding: 8px 16px; background: var(--card); color: var(--text); font: inherit; font-weight: 700; cursor: pointer; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 18px; align-items: start; }
+  .card { border-radius: 16px; background: var(--card); padding: 12px; box-shadow: inset 0 0 0 2px transparent; cursor: pointer; transition: transform .2s cubic-bezier(.3,1.6,.5,1), box-shadow .15s; }
+  .card:hover { transform: translateY(-3px); }
+  .card.is-on { box-shadow: inset 0 0 0 3px var(--accent); }
+  .card img { display: block; width: 100%; border-radius: 10px; background: #ddd; aspect-ratio: 4 / 5; object-fit: contain; }
+  .card[data-id="landscape"] img { aspect-ratio: 16 / 9; }
+  .card h2 { display: flex; align-items: center; gap: 8px; margin: 10px 2px 2px; font-size: 16px; }
+  .card h2 .pick { margin-left: auto; color: var(--accent); font-size: 13px; }
+  .card p { margin: 0 2px; color: var(--muted); font-size: 12.5px; }
+  .foot { position: fixed; left: 0; right: 0; bottom: 0; background: var(--bg); border-top: 1.5px solid var(--line); padding: 10px 16px; }
+  .foot-in { max-width: 1280px; margin: 0 auto; display: flex; gap: 12px; align-items: center; }
+  #picked { flex: 1; margin: 0; font-size: 13px; color: var(--muted); }
+  #copy { border: none; border-radius: 99px; padding: 10px 18px; background: var(--accent); color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+  #big { position: fixed; inset: 0; background: rgba(0,0,0,.7); display: none; place-items: center; z-index: 10; }
+  #big.is-open { display: grid; }
+  #big img { max-width: 92vw; max-height: 92vh; border-radius: 10px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>共有画像くらべ</h1>
+  <p class="lead">B をもとに、横の余白を減らした型を4つ足しました。押すと大きく見られます。気に入った型を選んで（赤い枠）、下の「選んだ結果をコピー」で送ってください。「別の対局で」で、CPU どうしの別の対局に変わります。</p>
+  <div class="tools"><button type="button" id="again">別の対局で</button><button type="button" id="draw">引き分けの例</button></div>
+  <div class="grid" id="grid"></div>
+</main>
+<div id="big"><img alt=""></div>
+<div class="foot"><div class="foot-in"><p id="picked">まだ選んでいません</p><button id="copy" type="button">選んだ結果をコピー</button></div></div>
+<script src="../sound.js"></script>
+<script src="../script.js"></script>
+<script src="../ai.js"></script>
+<script src="../share.js"></script>
+<script>
+  const TYPES = [
+    { id: 'poster', name: 'B いまの形', note: '中央よせ。盤のまわりに余白が多い' },
+    { id: 'posterBig', name: 'B1 盤を大きく', note: '4:5 のまま。見出しを詰め、下の段を1行にして、盤を 720 → 884 に' },
+    { id: 'posterBleed', name: 'B2 盤を端から端まで', note: '盤の色を画面の幅いっぱいに敷く。横の余白なし。デッキ名と「使われた超能力」は外した' },
+    { id: 'posterTall', name: 'B3 縦に少し長く', note: '3:4（1080×1440）。盤を大きくしたまま、下の2段も全部残す。インスタでは上下が少し切れる' },
+    { id: 'landscape', name: 'B4 横長（採用）', note: '1200×675。X のタイムラインで切れずに見える。左に盤、右に結果と2人' },
+  ];
+  let picked = null;
+  // CPU どうしで1局打つ（画面は使わず、ルールだけで進める）
+  function playGame(wantDraw = false) {
+    for (let tries = 0; tries < 30; tries++) {
+      state.mode = 'cpu';
+      const pick = () => STARTERS[Math.floor(Math.random() * STARTERS.length)];
+      const a = pick(), b = pick();
+      Object.assign(state, { phase: 'play', board: newBoard(), turn: 'b', selected: 0, sealed: null, chainTurn: null, jammed: null, lastMove: null, fx: [], winLine: null, winner: undefined, moveCount: 0, logs: [], history: [],
+        players: { b: makePlayer('b', a.deck), w: makePlayer('w', b.deck) }, decks: { b: a.deck, w: b.deck }, deckNames: { b: a.name, w: b.name } });
+      for (let k = 0; k < 200 && state.phase === 'play'; k++) {
+        const m = AI.chooseMove({ depth: 1 });
+        if (!m) break;
+        const color = state.turn, id = state.players[color].hand[m.i].ability;
+        state.selected = m.i;
+        const r = playMove(m.x, m.y, m.target || null);
+        if (!r.ok) break;
+        state.history.push({ color, id, x: m.x, y: m.y });
+      }
+      if (state.phase === 'play') continue;
+      if (wantDraw !== !state.winner) continue;
+      state.resultText = state.winner ? `${nameOf(state.winner)}の勝ち` : '引き分け';
+      state.resultSub = state.winner ? `${state.moveCount}手で勝負がついた` : '碁石を使い切った';
+      state.resultNote = state.winner ? '' : '碁石を使い切った';
+      return true;
+    }
+    return false;
+  }
+  async function render() {
+    const grid = document.getElementById('grid');
+    grid.innerHTML = TYPES.map((t) => `<div class="card ${picked === t.id ? 'is-on' : ''}" data-id="${t.id}"><img alt="${t.name}"><h2>${t.name}<span class="pick">${picked === t.id ? '選んだ' : ''}</span></h2><p>${t.note}</p></div>`).join('');
+    for (const t of TYPES) {
+      const blob = await ShareImage.make(t.id);
+      grid.querySelector(`[data-id="${t.id}"] img`).src = URL.createObjectURL(blob);
+    }
+  }
+  document.getElementById('grid').addEventListener('click', (e) => {
+    const card = e.target.closest('.card'); if (!card) return;
+    if (e.target.tagName === 'IMG') { const big = document.getElementById('big'); big.querySelector('img').src = e.target.src; big.classList.add('is-open'); return; }
+    picked = picked === card.dataset.id ? null : card.dataset.id;
+    for (const c of document.querySelectorAll('.card')) { c.classList.toggle('is-on', c.dataset.id === picked); c.querySelector('.pick').textContent = c.dataset.id === picked ? '選んだ' : ''; }
+    document.getElementById('picked').textContent = picked ? `選んだ型：${TYPES.find((t) => t.id === picked).name}` : 'まだ選んでいません';
+  });
+  document.getElementById('big').addEventListener('click', () => document.getElementById('big').classList.remove('is-open'));
+  document.getElementById('again').addEventListener('click', () => { playGame(false); render(); });
+  document.getElementById('draw').addEventListener('click', () => { playGame(true) || playGame(false); render(); });
+  document.getElementById('copy').addEventListener('click', async () => {
+    const t = document.getElementById('picked').textContent;
+    try { await navigator.clipboard.writeText(t); document.getElementById('copy').textContent = 'コピーしました'; } catch (e) { /* 表示から選んでもらう */ }
+    setTimeout(() => (document.getElementById('copy').textContent = '選んだ結果をコピー'), 1500);
+  });
+  playGame(false); render();
+</script>
+</body>
+</html>

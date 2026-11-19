@@ -1738,8 +1738,10 @@ function showResult(mover) {
     else if (state.winner !== mover) sub = `${playerName(mover)}が${playerName(state.winner)}の列をつくってしまった`;
     else if (state.winKind === 'flag') sub = '旗のまわりを囲んだ';
     else if (line.some((p) => p.ability === 'joker' && p.color !== state.winner)) sub = '相手のジョーカーで揃った';
-    else sub = `${state.moveCount}手目で決着`;
+    else sub = `${state.moveCount}手で勝負がついた`;
   }
+  // 共有画像のひとこと：決まり手に名前があるときだけ（ふつうに揃えたときは、手数を出す）
+  state.resultNote = /手で勝負がついた$/.test(sub) ? '' : sub;
   $('result-text').textContent = text;
   $('result-sub').textContent = sub;
   state.resultText = text;

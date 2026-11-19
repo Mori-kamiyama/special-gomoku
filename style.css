@@ -1352,10 +1352,10 @@ body[data-screen="title"] main { padding-bottom: 0; }
 }
 
 /* 棋譜の画像 */
-/* 画像を大きく見せる：画面の高さいっぱい近くまで（縦長 4:5 の画像） */
+/* 画像を大きく見せる：横長（16:9）の画像を、画面の幅いっぱい近くまで */
 .dialog.share-dialog { max-width: calc(100vw - 24px); max-height: calc(100svh - 24px); }
 .share-dialog .dialog-body { padding: 14px 14px 16px; }
-.share-img { display: block; width: min(calc(100vw - 52px), calc((100svh - 130px) * 0.8)); height: auto; border-radius: 10px; box-shadow: 0 0 0 1.5px var(--line); }
+.share-img { display: block; width: min(calc(100vw - 52px), calc((100svh - 130px) * 16 / 9), 900px); height: auto; border-radius: 10px; box-shadow: 0 0 0 1.5px var(--line); }
 .share-dialog .dialog-actions { margin-top: 12px; }
 
 /* 結果のダイアログ：ボタンの文字を途中で折り返さない。入らなければ、ボタンごと次の行へ */
