@@ -29,7 +29,7 @@ const other = (c) => (c === 'b' ? 'w' : 'b');
 
 // ===== アイコン（24×24 の SVG。線は石の文字色で描く） =====
 const ICONS = {
-  cataclysm: '<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" /> <path d="M21 3v5h-5" />',
+  cataclysm: '<path d="m9.5 5.5 7 7-7 7-7-7zM6 9l7 7m0-7-7 7"/><path d="M16 3.5a5 5 0 0 1 4.5 5.5M18 7l2.5 2 1.5-3"/>',
   mystery: '<path d="M8.5 9a3.5 3.5 0 1 1 4.8 3.2c-.8.4-1.3 1.1-1.3 2v.8"/><circle cx="12" cy="18.6" r="1.1" fill="currentColor" stroke="none"/>',
   flipAround: '<path d="M7.5 4v16M3.5 16l4 4 4-4M16.5 20V4M12.5 8l4-4 4 4"/>',
   revolution: '<path d="m2 9 3-3 3 3" /> <path d="M13 18H7a2 2 0 0 1-2-2V6" /> <path d="m22 15-3 3-3-3" /> <path d="M11 6h6a2 2 0 0 1 2 2v10" />',
@@ -630,6 +630,7 @@ const state = {
   board: [],
   decks: { b: null, w: null }, // 対局に使うデッキ（{ 能力: 数 }）
   players: {},
+  myName: null,
   turn: 'b',
   selected: 0,
   sealed: null, // 次の番に超能力が使えない色
@@ -644,16 +645,23 @@ const state = {
   logs: [],
 };
 
-// 画面とログに出す名前。CPU 対戦では「あなた」と「CPU」
-const nameOf = (c) => (state.mode === 'cpu' ? (c === CPU_COLOR ? 'CPU' : 'あなた')
-  : state.mode === 'online' ? (c === state.myColor ? 'あなた' : state.opponentName || NO_NAME) : COLOR_NAME[c]);
+// 画面とログに出す名前
+function nameOf(color) {
+    const myName = state.myName || NO_NAME;
+    if (state.mode === 'cpu') return color === CPU_COLOR ? 'CPU' : myName;
+    if (state.mode === 'online') return color === state.myColor ? myName : state.opponentName || NO_NAME;
+    return COLOR_NAME[color];
+}
 
-// オンライン対戦の名前。名前をつけていない人は「名前はまだない」
+// CPU 対戦とオンライン対戦で使う自分の名前
 const NO_NAME = '名前はまだない';
 const NAME_KEY = 'gomoku-name';
 function loadMyName() { try { return localStorage.getItem(NAME_KEY) || ''; } catch (e) { return ''; } }
-function saveMyName(n) { try { localStorage.setItem(NAME_KEY, n); } catch (e) { /* 保存できなくても遊べる */ } }
-// 相手から届いた名前：画面を壊す文字を外し、12文字まで
+function saveMyName(value) {
+    state.myName = cleanName(value);
+    try { localStorage.setItem(NAME_KEY, state.myName); } catch (e) { /* 保存できなくても遊べる */ }
+}
+// 名前から記号・制御文字を外し、12文字まで
 const cleanName = (n) => String(n || '').replace(/[<>&"'`\u0000-\u001f]/g, '').trim().slice(0, 12);
 
 function log(text) {
@@ -1101,6 +1109,7 @@ function startSelect(mode = state.mode) {
   };
   showScreen('select');
   $('deck-copy-announcement').textContent = '';
+  if (mode === 'cpu' || mode === 'online') $('my-name').value = state.myName ?? cleanName(loadMyName());
   renderSelect();
 }
 
@@ -1144,9 +1153,8 @@ function renderSelect(preserveScroll = false) {
   }).join('');
   $('select-cols').querySelectorAll('.sel-list').forEach((el, i) => { el.scrollTop = scrolls[i] || 0; });
   const nameField = $('name-field');
-  nameField.hidden = state.mode !== 'online';
+  nameField.hidden = state.mode !== 'cpu' && state.mode !== 'online';
   $('word-field').hidden = state.mode !== 'online';
-  if (state.mode === 'online') $('my-name').value = loadMyName();
   const go = $('select-go');
   go.hidden = manage;
   go.textContent = twoCols ? 'この2つで対戦' : state.mode === 'online' ? 'このデッキで相手をさがす' : 'このデッキで対戦';
@@ -1185,6 +1193,7 @@ function onSelectClick(e) {
 function confirmSelect() {
   const mine = deckByRef(state.choice.b);
   if (!mine || deckError(mine.deck)) return;
+  if (state.mode === 'cpu' || state.mode === 'online') saveMyName($('my-name').value);
   saveChoice(state.choice);
   if (state.mode === 'pvp' || state.mode === 'cpu') {
     const ref = state.choice[choiceSlot('w')];
@@ -1633,7 +1642,7 @@ function showStoneTip(x, y) {
     : p.ability === 'block' ? '石垣が立てた、誰のものでもない石。どの列にも入らない'
     : ab.desc;
   const showDemo = Demo.has(p.ability);
-  tip.innerHTML = `${showDemo ? '<span class="tip-demo mini"></span>' : ''}<b>${ab.name}</b><span class="tip-owner">${owner}${fuseNote}</span>${desc}`;
+  tip.innerHTML = `${showDemo ? '<span class="tip-demo mini"></span>' : ''}<b>${ab.name}</b><span class="tip-owner">${escapeHTML(owner)}${fuseNote}</span>${desc}`;
   tip.hidden = false;
   // 碁石の上に出す。上に場所がなければ下に。左右は画面からはみ出さないように
   const r = cellEl.getBoundingClientRect();
@@ -1683,7 +1692,7 @@ function renderPanel(color) {
   el.innerHTML = `
     <div class="player-head">
       <span class="turn-dot turn-${color}"></span>
-      <span class="player-name">${playerName(color)}</span>
+      <span class="player-name">${escapeHTML(playerName(color))}</span>
       <span class="thinking" aria-hidden="true"><i></i><i></i><i></i></span>
       ${sealed ? '<span class="tag">封印中</span>' : ''}
       <span class="bag-info">のこり${piecesLeft(p)}個</span>
@@ -1736,11 +1745,11 @@ function selectCard(i) {
 function renderStatus() {
   const status = $('game-status');
   if (state.phase === 'end') {
-    status.innerHTML = `<span class="status-text">${state.winner ? `${playerName(state.winner)}の勝ち` : '引き分け'}</span>`
+    status.innerHTML = `<span class="status-text">${state.winner ? `${escapeHTML(playerName(state.winner))}の勝ち` : '引き分け'}</span>`
       + '<button type="button" class="btn-primary btn-small" id="again-inline">もう一局</button>';
     $('again-inline').addEventListener('click', () => (state.mode === 'online' ? backToTitle(true) : startGame()));
   } else {
-    status.innerHTML = `<span class="turn-dot turn-${state.turn}"></span><span class="status-text">${playerName(state.turn)}の番</span>`;
+    status.innerHTML = `<span class="turn-dot turn-${state.turn}"></span><span class="status-text">${escapeHTML(playerName(state.turn))}の番</span>`;
   }
 }
 
@@ -1763,7 +1772,7 @@ function renderGame() {
 
 function renderLog() {
   const el = $('log');
-  if (el) el.innerHTML = state.logs.map((t) => `<li>${t}</li>`).join('');
+  if (el) el.innerHTML = state.logs.map((t) => `<li>${escapeHTML(t)}</li>`).join('');
 }
 
 // タッチでは、1回目のタップで場所を選び、同じマスをもう一度タップして置く
@@ -1989,10 +1998,10 @@ async function startOnline() {
       const seed = newSeed();
       const myColor = Math.random() < 0.5 ? 'b' : 'w';
       Net.send('start', { seed, guestColor: other(myColor) });
-      Net.send('deck', { deck: state.myDeck, name: state.myDeckName, player: loadMyName() });
+      Net.send('deck', { deck: state.myDeck, name: state.myDeckName, player: state.myName });
       beginOnline(seed, myColor);
     } else {
-      Net.send('deck', { deck: state.myDeck, name: state.myDeckName, player: loadMyName() });
+      Net.send('deck', { deck: state.myDeck, name: state.myDeckName, player: state.myName });
       Net.once('start', (d) => beginOnline(d.seed, d.guestColor));
     }
   } catch (err) {
@@ -2139,7 +2148,7 @@ function init() {
   });
   $('deck-code-form').addEventListener('submit', importDeckCode);
   $('deck-code-close').addEventListener('click', () => $('deck-code-dialog').close());
-  $('my-name').addEventListener('input', (e) => saveMyName(cleanName(e.target.value)));
+  $('my-name').addEventListener('input', (e) => saveMyName(e.target.value));
   $('deck-go').addEventListener('click', saveBuilder);
   $('deck-back').addEventListener('click', () => leaveBuilder(false));
   $('deck-delete').addEventListener('click', deleteBuilder);
