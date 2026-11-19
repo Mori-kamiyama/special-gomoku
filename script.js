@@ -1222,6 +1222,7 @@ function confirmSelect() {
 }
 
 // ===== デッキを作る（構築） =====
+const compactDeck = typeof matchMedia === 'function' ? matchMedia('(max-width: 899px)') : null;
 // ref：直す自分のデッキ、またはもとにするスターター。null なら空から。color：作り終えたら、その色に選ぶ
 function openBuilder(ref, color = 'b') {
   const d = deckByRef(ref);
@@ -1315,29 +1316,40 @@ function renderDeck(full = false) {
       const head = c !== lastCost ? `<p class="dk-head ${TIER[c]}"><span class="dk-coin">${c}</span>ポイント</p>` : '';
       lastCost = c;
       const desc = id === 'plain' ? '超能力のない、ふつうの碁石' : ABILITIES[id].desc;
-      return `${head}<div class="dk-tile ${TIER[c]}" data-id="${id}" role="button" tabindex="0" aria-label="${ABILITIES[id].name}（${c}ポイント）">
+      return `${head}<div class="dk-tile ${TIER[c]}" data-id="${id}">
         <span class="dk-visual">${stoneHTML(color, id)}</span>
-        <span class="dk-body"><span class="dk-name">${ABILITIES[id].name}</span><span class="dk-desc">${desc}</span></span>
+        <button type="button" class="dk-body" aria-label="${ABILITIES[id].name}（${c}ポイント）" aria-describedby="dk-desc-${id}"><span class="dk-name">${ABILITIES[id].name}</span><span id="dk-desc-${id}" class="dk-desc">${desc}</span></button>
+        <span class="dk-count" aria-hidden="true"></span>
         <span class="dk-step">
           <button type="button" class="dk-minus" aria-label="${ABILITIES[id].name}を1つへらす">−</button>
           <b class="dk-n">0</b>
-          <span class="dk-plus" aria-hidden="true">＋</span>
+          <button type="button" class="dk-plus" aria-label="${ABILITIES[id].name}を1つ足す">＋</button>
         </span>
       </div>`;
     }).join('');
     $('deck-catalog').querySelectorAll('.dk-tile').forEach((el) => {
       const id = el.dataset.id;
-      el.addEventListener('pointerenter', (e) => { if (e.pointerType === 'mouse') focusDeck(id); });
+      el.addEventListener('pointerenter', (e) => { if (!compactDeck.matches && e.pointerType === 'mouse') focusDeck(id); });
+      el.addEventListener('focusin', () => { if (!compactDeck.matches) focusDeck(id); });
       el.addEventListener('click', (e) => {
         if (e.target.closest('.dk-minus')) { changeDeck(id, -1); return; }
         focusDeck(id);
+        if (compactDeck.matches && !e.target.closest('.dk-plus')) {
+          el.scrollIntoView({ block: 'nearest' });
+          return;
+        }
         changeDeck(id, 1, el);
       });
       el.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ' || e.key === '+') { e.preventDefault(); changeDeck(id, 1, el); }
-        if (e.key === 'Backspace' || e.key === '-') { e.preventDefault(); changeDeck(id, -1); }
+        if (e.key === '+' && (!compactDeck.matches || state.deckFocus === id)) {
+          e.preventDefault();
+          changeDeck(id, 1, el);
+        }
+        if (e.key === 'Backspace' || e.key === '-') {
+          e.preventDefault();
+          changeDeck(id, -1);
+        }
       });
-      el.addEventListener('focus', () => focusDeck(id));
     });
   }
   $('deck-catalog').querySelectorAll('.dk-tile').forEach((el) => {
@@ -1346,6 +1358,7 @@ function renderDeck(full = false) {
     el.classList.toggle('is-in', n > 0);
     el.classList.toggle('is-off', n >= max || costOf(id) > left);
     el.querySelector('.dk-n').textContent = n;
+    el.querySelector('.dk-count').textContent = n ? `×${n}` : '';
   });
 
   // ポイントのメーター：1ポイントが1マス。碁石ごとに、その色でマスが埋まる
@@ -1372,7 +1385,6 @@ function renderDeck(full = false) {
 function focusDeck(id) {
   if (state.deckFocus === id) return;
   state.deckFocus = id;
-  $('deck-catalog').querySelectorAll('.dk-tile').forEach((el) => el.classList.toggle('is-focus', el.dataset.id === id));
   renderDeckInfo();
 }
 
@@ -1381,6 +1393,14 @@ function renderDeckInfo() {
   const old = el.querySelector('.mini');
   if (old) Demo.stop(old);
   const id = state.deckFocus;
+  $('deck-catalog').querySelectorAll('.dk-tile').forEach((tile) => {
+    const selected = tile.dataset.id === id;
+    tile.classList.toggle('is-focus', selected);
+    const button = tile.querySelector('.dk-body');
+    if (compactDeck.matches) button.setAttribute('aria-expanded', String(selected));
+    else button.removeAttribute('aria-expanded');
+  });
+  if (compactDeck.matches) { el.innerHTML = ''; return; }
   if (!id) { el.innerHTML = '<p class="deck-hint">碁石を押すとデッキに入る。<br>強い碁石ほどポイントが高い。</p>'; return; }
   const ab = ABILITIES[id];
   const desc = id === 'plain' ? '超能力のない、ふつうの碁石' : ab.desc;
@@ -2158,6 +2178,9 @@ function onKey(e) {
 
 function init() {
   if (!$('start-pvp')) return; // ゲームの画面がないページ（比較ページなど）では、初期化しない
+  compactDeck.addEventListener('change', () => {
+    if (state.phase === 'build') renderDeckInfo();
+  });
   renderRules();
   $('logo-btn').addEventListener('click', backToTitle);
   $('start-pvp').addEventListener('click', (e) => expandThen(e.currentTarget, () => startSelect('pvp')));

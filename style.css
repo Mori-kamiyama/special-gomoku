@@ -901,15 +901,15 @@ body[data-screen="title"] main { padding-bottom: 0; }
   padding: 10px 4px 8px;
   border-radius: 12px;
   background: color-mix(in srgb, var(--tier) 9%, var(--bg));
-  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--tier) 30%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tier) 18%, transparent);
   cursor: pointer;
   user-select: none;
   transition: transform 0.18s cubic-bezier(0.3, 1.6, 0.5, 1), background 0.15s, box-shadow 0.15s;
 }
-.dk-tile:hover, .dk-tile.is-focus { transform: translateY(-3px); background: color-mix(in srgb, var(--tier) 18%, var(--bg)); box-shadow: inset 0 0 0 2px var(--tier); }
+.dk-tile:hover, .dk-tile.is-focus { transform: translateY(-3px); background: color-mix(in srgb, var(--tier) 18%, var(--bg)); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--tier) 36%, transparent); }
 .dk-tile:active { transform: scale(0.94); transition-duration: 0.06s; }
-.dk-tile:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
-.dk-tile.is-in { background: color-mix(in srgb, var(--tier) 22%, var(--bg)); box-shadow: inset 0 0 0 2.5px var(--tier); }
+.dk-tile button:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+.dk-tile.is-in { background: color-mix(in srgb, var(--tier) 22%, var(--bg)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tier) 28%, transparent); }
 .dk-tile.is-off:not(.is-in) { opacity: 0.5; }
 .dk-tile.is-off:not(.is-in):hover { transform: none; }
 .dk-visual { position: relative; display: grid; place-items: center; width: 42px; }
@@ -1010,22 +1010,18 @@ body[data-screen="title"] main { padding-bottom: 0; }
 .deck-toast.is-show { animation: toast 1.4s ease; }
 @keyframes toast { 0% { opacity: 0; transform: translate(-50%, 8px); } 12%, 75% { opacity: 1; transform: translate(-50%, 0); } 100% { opacity: 0; } }
 
-/* スマホ：一覧はその中でスクロール。説明とデッキの中身は小さく */
+/* スマホ：一覧の中でカードを開く */
 @media (max-width: 899px) {
   .deck-catalog { grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); }
   .dk-visual { width: 34px; }
   .dk-name { font-size: 11.5px; }
   .deck-side { gap: 8px; }
-  .deck-info { min-height: 0; }
-  .deck-info:has(.deck-hint) { display: none; }
-  .deck-demo { width: 64px; }
-  .deck-text { font-size: 12.5px; }
+  .deck-info { display: none; }
   .deck-bag .stone { width: 20px; }
   .meter-bar i { height: 10px; }
 }
 @media (max-width: 899px) and (max-height: 700px) {
   .deck-bag { display: none; }
-  .deck-demo { display: none; }
 }
 
 /* 広い画面：左に一覧、右にデッキ */
@@ -1303,7 +1299,17 @@ body[data-screen="title"] main { padding-bottom: 0; }
 .dk-visual.is-pop { animation: dk-pop 0.35s cubic-bezier(0.3, 1.8, 0.5, 1); }
 @keyframes dk-pop { 40% { transform: scale(1.18) rotate(-6deg); } }
 .dk-visual > .stone .icon { width: 58%; }
-.dk-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.dk-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
 .dk-name { font-size: 15px; text-align: left; }
 .dk-desc {
   font-size: 11.5px;
@@ -1329,8 +1335,10 @@ body[data-screen="title"] main { padding-bottom: 0; }
 .dk-step .dk-minus { display: grid; background: color-mix(in srgb, var(--text) 10%, transparent); color: var(--text); visibility: hidden; }
 .dk-tile.is-in .dk-step .dk-minus { visibility: visible; }
 .dk-step .dk-minus:hover { background: var(--text); color: var(--bg); }
-.dk-plus { background: var(--tier); color: var(--tier-ink); transition: transform 0.15s; }
-.dk-tile:hover .dk-plus { transform: scale(1.12); }
+.dk-plus { border: 0; padding: 0; cursor: pointer; background: var(--tier); color: var(--tier-ink); transition: transform 0.15s; }
+@media (hover: hover) {
+  .dk-tile:hover .dk-plus { transform: scale(1.12); }
+}
 .dk-n { min-width: 1.4em; text-align: center; font-size: 17px; font-variant-numeric: tabular-nums; opacity: 0.35; }
 .dk-tile.is-in .dk-n { opacity: 1; }
 .dk-tile.is-off .dk-plus { background: color-mix(in srgb, var(--text) 15%, transparent); color: var(--muted); }
@@ -1347,7 +1355,26 @@ body[data-screen="title"] main { padding-bottom: 0; }
   .dk-tile { padding: 10px 10px 8px; column-gap: 9px; row-gap: 6px; }
   .dk-visual { width: 46px; }
   .dk-name { font-size: 14px; }
-  .dk-desc { font-size: 11px; }
+  .dk-tile,
+  .dk-tile:hover,
+  .dk-tile:active,
+  .dk-tile.is-focus { transform: none; }
+  .dk-tile:not(.is-focus) { align-items: center; grid-template-rows: auto; }
+  .dk-tile:not(.is-focus) .dk-visual { grid-row: auto; }
+  .dk-tile:not(.is-focus) .dk-desc,
+  .dk-tile:not(.is-focus) .dk-step { display: none; }
+  .dk-tile:not(.is-focus) .dk-count:not(:empty) {
+    display: block;
+    top: 3px;
+    right: 5px;
+    background: color-mix(in srgb, var(--tier) 17%, var(--bg));
+    color: var(--text);
+    font-size: 11px;
+  }
+  .dk-tile.is-focus { grid-column: 1 / -1; padding: 12px; }
+  .dk-tile.is-focus .dk-visual { width: 58px; }
+  .dk-tile.is-focus .dk-desc { display: block; overflow: visible; color: var(--text); font-size: 14px; }
+  .dk-tile.is-focus :is(.dk-plus, .dk-minus) { width: 44px; height: 44px; }
   .deck-bag .stone { width: 24px; }
 }
 @media (max-width: 359px) {
