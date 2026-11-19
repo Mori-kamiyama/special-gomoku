@@ -115,7 +115,7 @@ const ABILITIES = {
   seal: { name: '封印', desc: '相手は次の番、超能力が使えない', onPlace: sealAbility },
   jam: { name: 'おじゃま', desc: 'まわり8マスの碁石の超能力を消して、ただの石にする', onPlace: jamAbility, area: 'ring' },
   spy: { name: 'スパイ', desc: '相手の色で置く。この石を含む列が揃ったら、こっちの勝ち。相手があと1つで揃う場所には置けない' },
-  mine: { name: '地雷', desc: 'まわり8マスに相手が石を置いたら、その石を消す。地雷は何度でも反応する', area: 'ring' },
+  mine: { name: '地雷', desc: 'まわり8マスに相手が石を置いたら、その石を消す。反応した地雷はただの石になる', area: 'ring' },
   weight: { name: '重し', desc: '押し出し・吸い込み・回転で動かされない' },
   shield: { name: '盾', desc: '爆弾・囲碁・地雷・乗っ取りで消されない' },
 };
@@ -448,7 +448,7 @@ function groupOf(board, sx, sy) {
   return { cells, free };
 }
 
-// 置いた石のまわり8マスに相手の地雷があれば、置いた石を消す。地雷は盤に残る
+// 置いた石のまわり8マスに相手の地雷があれば、置いた石を消す。地雷はただの石になって盤に残る
 function mineCheck(board, uid) {
   const fx = [];
   const pos = findUid(board, uid);
@@ -461,6 +461,7 @@ function mineCheck(board, uid) {
     const m = inside(mx, my) && board[my][mx];
     if (m && m.ability === 'mine' && m.color === other(placed.color)) {
       if (removeStone(board, fx, x, y)) {
+        m.ability = 'plain';
         Object.assign(fx[0], { by: 'mine', fromX: mx, fromY: my });
       }
       break;
@@ -583,7 +584,7 @@ function shuffle(arr) {
 // ===== デッキ =====
 // 24ポイントまで組める。ただの石は1ポイント。強い碁石ほど高い（数と強さのトレードオフ）
 // 碁石の追加・削除、コスト・能力・対局ルールの変更時に上げる。UI の変更では上げない。
-const RULES_VERSION = 3;
+const RULES_VERSION = 4;
 const DECK_POINTS = 24;
 const MAX_COPIES = 3; // 同じ超能力は3つまで
 const COST = {
