@@ -46,16 +46,6 @@
           const empty = cells.filter((q) => !q).length;
           if (own + empty === 4) s += own === 3 ? 1500 : own === 2 ? 60 : 5;
         }
-        if (p.ability === 'square') {
-          let best = 0;
-          for (const [ox, oy] of [[0, 0], [-1, 0], [0, -1], [-1, -1]]) {
-            const cells = [[0, 0], [1, 0], [0, 1], [1, 1]].map(([dx, dy]) => at(x + ox + dx, y + oy + dy));
-            if (cells.some((q) => q === undefined || (q && q.color !== c))) continue;
-            const own = cells.filter((q) => q).length;
-            best = Math.max(best, own === 3 ? 1500 : own === 2 ? 60 : 5);
-          }
-          s += best;
-        }
       }
     }
     return s;
@@ -74,7 +64,7 @@
   }
 
   // ===== 状態の保存と復元（手を試すため） =====
-  const KEYS = ['board', 'players', 'turn', 'selected', 'sealed', 'jammed', 'moveCount', 'phase', 'winner', 'winLine', 'lastMove'];
+  const KEYS = ['board', 'players', 'turn', 'selected', 'sealed', 'chainTurn', 'jammed', 'moveCount', 'phase', 'winner', 'winLine', 'lastMove'];
   // 状態のコピー。structuredClone より速いように、形の分かっているものだけを手で写す
   const copyPlayer = (p) => ({ ...p, bag: p.bag.map((c) => ({ ...c })), hand: p.hand.map((c) => ({ ...c })) });
   function clone(s) {
@@ -183,7 +173,7 @@
 
   // ===== 取り合い：計測で勝率が高かった順に取る（少しぶれる） =====
   // tools/balance.mjs の結果（取った側の勝率、%。depth 2・3000局）。計測をやり直したら更新する
-  const PICK_VALUE = { square: 48, othello: 47, spy: 45, takeover: 38, grow: 37, diagBomb: 36, spin: 35, bomb: 35, colBomb: 35, chain: 35, spinBack: 34, cloneV: 33, cloneH: 33, seal: 33, clone: 32, rowBomb: 32, suck: 32, flag: 31, push: 30, jam: 30, go: 30, weight: 29, shield: 29, antigravity: 29, wall: 28, joker: 27, mine: 26, gravity: 26 };
+  const PICK_VALUE = { othello: 47, spy: 45, takeover: 38, grow: 37, diagBomb: 36, spin: 35, bomb: 35, colBomb: 35, chain: 35, spinBack: 34, cloneV: 33, cloneH: 33, seal: 33, clone: 32, rowBomb: 32, suck: 32, flag: 31, push: 30, jam: 30, go: 30, weight: 29, shield: 29, antigravity: 29, wall: 28, joker: 27, mine: 26, gravity: 26 };
   function draftPick(pool) {
     let best = null;
     for (const card of pool) {

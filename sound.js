@@ -283,13 +283,13 @@
     clone: ['water', {}], cloneH: ['water', {}], cloneV: ['water', {}],
     seal: ['curse', {}], jam: ['curse', {}], spy: ['shadow', {}], joker: ['shadow', { sparkle: true }],
     mine: ['thunder', { pw: 0.7 }], chain: ['thunder', { pw: 1 }], grow: ['plant', {}],
-    flag: ['light', {}], square: ['light', {}], othello: ['invert', {}], takeover: ['invert', {}],
+    flag: ['light', {}], othello: ['invert', {}], takeover: ['invert', {}],
   };
   // 録音の素材がある超能力は、それを鳴らす。ないものは合成の音に、木の「コッ」を重ねる
   const ABILITY_SAMPLE = {
     bomb: ['bomb', 1], rowBomb: ['bomb', 0.8], colBomb: ['bomb', 0.8], diagBomb: ['bomb', 0.85], nuke: ['nuke', 1],
     spin: ['vortex', 0.6], spinBack: ['vortex', 0.6], suck: ['vortex', 0.6],
-    mine: ['thunder', 0.8], chain: ['thunder', 0.9], flag: ['light', 0.9], square: ['light', 0.9],
+    mine: ['thunder', 0.8], chain: ['thunder', 0.9], flag: ['light', 0.9],
     push: ['push', 1], gravity: ['gravity', 0.9], antigravity: ['antigravity', 0.8], go: ['go', 1], weight: ['weight', 1],
     seal: ['seal', 0.8], jam: ['jam', 0.8], joker: ['joker', 0.8], takeover: ['takeover', 0.8],
     spy: ['small', 0.9], grow: ['small', 0.9], // ぴったりの音がまだないので、木の「コッ」だけ

@@ -48,7 +48,7 @@
     spy: 'shadow', joker: 'shadow',
     mine: 'thunder', chain: 'thunder',
     grow: 'plant',
-    flag: 'light', square: 'light',
+    flag: 'light',
     othello: 'invert', takeover: 'invert',
   };
   // 予兆の長さ（秒）。重い属性ほど長くためる
@@ -466,7 +466,6 @@
     chain: { el: 'thunder', impact: (e, x, y, s) => IMPACT.thunder(e, x, y, s, { bolts: 5 }), shake: 0.3 },
     grow: { el: 'plant', impact: (e, x, y, s) => IMPACT.plant(e, x, y, s) },
     flag: { el: 'light', impact: (e, x, y, s) => IMPACT.light(e, x, y, s) },
-    square: { el: 'light', impact: (e, x, y, s) => IMPACT.light(e, x, y, s) },
     othello: { el: 'invert', impact: (e, x, y, s) => IMPACT.invert(e, x, y, s) },
     takeover: { el: 'invert', impact: (e, x, y, s) => IMPACT.invert(e, x, y, s), shake: 0.3 },
   };
@@ -624,7 +623,6 @@
     weight: { pre: [[1, 0, 'w', 'weight'], [-1, 0, 'w'], [0, 1, 'b'], [-1, -1, 'w']], at: [0, 0], place: 'push' },
     shield: { pre: [[1, 0, 'w', 'shield'], [-1, 0, 'w'], [0, -1, 'b'], [-1, 1, 'w']], at: [0, 0], place: 'bomb' },
     flag: { pre: [[0, 0, 'b', 'flag'], [0, -1, 'b'], [-1, 0, 'b'], [1, 0, 'b'], [1, 1, 'w']], at: [0, 1], place: 'plain', show: 'flag' },
-    square: { pre: [[0, 0, 'b', 'square'], [1, 0, 'b'], [0, 1, 'b'], [-1, 1, 'w']], at: [1, 1], place: 'plain', show: 'square' },
     grow: { pre: [[0, 0, 'b', 'grow', 1], [1, -1, 'w']], at: [-2, 2], place: 'plain' },
   };
 

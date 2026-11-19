@@ -56,7 +56,6 @@ const ICONS = {
   weight: '<path d="M6.5 20h11l-2-9h-7z"/><path d="M9.5 11V8.5a2.5 2.5 0 0 1 5 0V11"/>',
   shield: '<path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z"/>',
   flag: '<path d="M6.5 21V3.5M6.5 4.5h11l-2.8 4 2.8 4h-11"/>',
-  square: '<rect x="4.5" y="4.5" width="6.5" height="6.5" rx="1.2"/><rect x="13" y="4.5" width="6.5" height="6.5" rx="1.2"/><rect x="4.5" y="13" width="6.5" height="6.5" rx="1.2"/><rect x="13" y="13" width="6.5" height="6.5" rx="1.2" fill="currentColor"/>',
   grow: '<path d="M12 21v-8.5"/><path d="M12 13c0-4.2 3-6.5 7.5-6.5 0 4.2-3 6.5-7.5 6.5zM12 15c0-3.3-2.4-5.3-6-5.3 0 3.3 2.4 5.3 6 5.3z"/>',
 };
 
@@ -82,11 +81,10 @@ const ABILITIES = {
   colBomb: { name: '縦爆弾', desc: '上下2マスずつの石を消す', onPlace: (b, x, y) => lineBomb(b, x, y, [[0, 1]]), area: 'col' },
   diagBomb: { name: 'ななめ爆弾', desc: 'ななめ4方向に2マスずつの石を消す', onPlace: (b, x, y) => lineBomb(b, x, y, [[1, 1], [1, -1]]), area: 'diag' },
   flag: { name: '旗', desc: '上下左右の4マスが全部自分の石になったら勝ち', area: 'cross' },
-  square: { name: '結束', desc: 'この碁石を含む2×2の正方形が自分の石でそろったら勝ち', area: 'square' },
   grow: { name: '増殖', desc: '盤にある間、自分の番が2回来るたびに、隣の空きマスに石が1つ増える', area: 'cross' },
   othello: { name: 'オセロ', desc: '相手の石をちょうど1個はさんだら、その石を自分の色にする', onPlace: othelloAbility },
   go: { name: '囲碁', desc: '盤にある間、隣の相手の石が囲まれて逃げ場をなくしたら取る', area: 'cross' },
-  chain: { name: '連続', desc: 'もう1回置ける', extraTurn: true },
+  chain: { name: '連続', desc: 'もう1回置ける。続けて連続は置けない', extraTurn: true },
   gravity: { name: '重力', desc: 'いつでも下へ落ちる。下に続く石も一緒に押して落とす', area: 'down' },
   antigravity: { name: '反重力', desc: 'いつでも上へ昇る。上に続く石も一緒に押して昇らせる', area: 'up' },
   spin: { name: '回転', desc: 'まわりの8マスを、時計回りに1つずらす', onPlace: (b, x, y) => spinRing(b, x, y, 1), area: 'ring' },
@@ -98,7 +96,7 @@ const ABILITIES = {
   takeover: { name: '乗っ取り', desc: '相手の石の上に置ける。下の石は消える', onEnemy: true },
   seal: { name: '封印', desc: '相手は次の番、超能力が使えない', onPlace: sealAbility },
   jam: { name: 'おじゃま', desc: 'まわり8マスの碁石の超能力を消して、ただの石にする', onPlace: jamAbility, area: 'ring' },
-  spy: { name: 'スパイ', desc: '相手の色で置く。この石を含む列が揃ったら、こっちの勝ち。相手にリーチがあるときは置けない' },
+  spy: { name: 'スパイ', desc: '相手の色で置く。この石を含む列が揃ったら、こっちの勝ち。相手があと1つで揃う場所には置けない' },
   mine: { name: '地雷', desc: 'まわり8マスに相手が石を置いたら、その石と一緒に消える', area: 'ring' },
   weight: { name: '重し', desc: '押し出し・吸い込み・回転で動かされない' },
   shield: { name: '盾', desc: '爆弾・囲碁・地雷・乗っ取りで消されない' },
@@ -423,12 +421,6 @@ function specialWin(board, c) {
       if (p.ability === 'flag' && DIRS4.every(([dx, dy]) => own(x + dx, y + dy))) {
         return [[x, y], ...DIRS4.map(([dx, dy]) => [x + dx, y + dy])];
       }
-      if (p.ability === 'square') {
-        for (const [ox, oy] of [[0, 0], [-1, 0], [0, -1], [-1, -1]]) {
-          const cells = [[x + ox, y + oy], [x + ox + 1, y + oy], [x + ox, y + oy + 1], [x + ox + 1, y + oy + 1]];
-          if (cells.every(([cx, cy]) => own(cx, cy))) return cells;
-        }
-      }
     }
   }
   return null;
@@ -476,7 +468,7 @@ const COST = {
   gravity: 2, antigravity: 2, mine: 2, jam: 2, go: 2, weight: 2, shield: 2, wall: 2, joker: 2, push: 2,
   bomb: 3, rowBomb: 3, colBomb: 3, spin: 3, spinBack: 3, clone: 3, cloneH: 3, cloneV: 3, seal: 3, suck: 3, flag: 3,
   diagBomb: 4, takeover: 4, grow: 4, chain: 4,
-  othello: 5, square: 6, nuke: 6,
+  othello: 5, nuke: 6,
   spy: 3, // リーチがあると置けないので、安くした
 };
 const costOf = (id) => COST[id] || 3;
@@ -489,7 +481,7 @@ const STARTERS = [
   { id: 'balance', name: 'バランス', note: 'いろいろ少しずつ', deck: { plain: 8, bomb: 1, spin: 1, grow: 1, seal: 1, clone: 1 } },
   { id: 'mass', name: '物量', note: '数で押す', deck: { plain: 14, gravity: 2, mine: 2, shield: 1 } },
   { id: 'sourspy', name: 'すっぱいスパイ', note: '相手の列にまぎれこむ', deck: { plain: 6, joker: 3, bomb: 1, spy: 3 } },
-  { id: 'nuclear', name: '一発逆転', note: '核が2つ。置けるのは9つだけ', deck: { plain: 6, nuke: 2, square: 1 } },
+  { id: 'nuclear', name: '一発逆転', note: '核が2つ', deck: { plain: 12, nuke: 2 } },
 ];
 
 function makePlayer(color, deck) {
@@ -516,6 +508,7 @@ const state = {
   turn: 'b',
   selected: 0,
   sealed: null, // 次の番に超能力が使えない色
+  chainTurn: null, // 連続でもらった手の色（その手では連続を使えない）
   jammed: null,
   lastMove: null,
   fx: [],
@@ -528,7 +521,15 @@ const state = {
 
 // 画面とログに出す名前。CPU 対戦では「あなた」と「CPU」
 const nameOf = (c) => (state.mode === 'cpu' ? (c === CPU_COLOR ? 'CPU' : 'あなた')
-  : state.mode === 'online' ? (c === state.myColor ? 'あなた' : '相手') : COLOR_NAME[c]);
+  : state.mode === 'online' ? (c === state.myColor ? 'あなた' : state.opponentName || NO_NAME) : COLOR_NAME[c]);
+
+// オンライン対戦の名前。名前をつけていない人は「名前はまだない」
+const NO_NAME = '名前はまだない';
+const NAME_KEY = 'gomoku-name';
+function loadMyName() { try { return localStorage.getItem(NAME_KEY) || ''; } catch (e) { return ''; } }
+function saveMyName(n) { try { localStorage.setItem(NAME_KEY, n); } catch (e) { /* 保存できなくても遊べる */ } }
+// 相手から届いた名前：画面を壊す文字を外し、12文字まで
+const cleanName = (n) => String(n || '').replace(/[<>&"'`\u0000-\u001f]/g, '').trim().slice(0, 12);
 
 function log(text) {
   state.logs.unshift(text);
@@ -542,6 +543,7 @@ function effectiveAbility(card, color) {
 
 function canPlaceAt(x, y, color, ability) {
   if (!inside(x, y)) return false;
+  if (ability === 'spy' && spyCompletes(state.board, x, y, color)) return false;
   const cell = state.board[y][x];
   if (!cell) return true;
   return !!ABILITIES[ability].onEnemy && cell.color === other(color) && !isShielded(cell);
@@ -562,9 +564,19 @@ function hasReach(board, c) {
   return false;
 }
 
-// 手札の碁石を、いま使えるか（スパイは、相手にリーチがあると使えない）
-function cardBlocked(card, color, board = state.board) {
-  return effectiveAbility(card, color) === 'spy' && hasReach(board, other(color));
+// 手札の碁石を、いま使えるか（連続でもらった手では、連続は使えない）
+function cardBlocked(card, color) {
+  return effectiveAbility(card, color) === 'chain' && state.chainTurn === color;
+}
+
+// スパイは、相手があと1つで揃う場所（リーチの場所）には置けない。置くと相手の5つ目になって、勝ちを横取りできてしまう
+function spyCompletes(board, x, y, color) {
+  if (board[y][x]) return false;
+  const c = other(color);
+  board[y][x] = { color: c, ability: 'plain' };
+  const win = findWin(board, c);
+  board[y][x] = null;
+  return !!win;
 }
 
 const snapshot = (board) => board.map((row) => row.map((c) => c && { ...c }));
@@ -636,7 +648,7 @@ function playMove(x, y) {
     if (line) {
       winner = lineOwner(state.board, line, c);
       state.winLine = line;
-      state.winKind = normal ? 'line' : special.length === 5 ? 'flag' : 'square';
+      state.winKind = normal ? 'line' : 'flag';
       break;
     }
   }
@@ -650,6 +662,7 @@ function playMove(x, y) {
 
   // 次の番。碁石がない人は飛ばし、2人ともなければ引き分け
   let next = ab.extraTurn ? color : other(color);
+  state.chainTurn = ab.extraTurn ? color : null; // 連続でもらった手か（その手では連続を使えない）
   if (!piecesLeft(state.players[next])) {
     log(`${nameOf(next)}は碁石を使い切った`);
     next = other(next);
@@ -657,6 +670,7 @@ function playMove(x, y) {
     log(`${nameOf(next)}は置ける碁石がなくて、番を飛ばした`);
     next = other(next);
   }
+  if (next !== color) state.chainTurn = null;
   const full = state.board.every((row) => row.every(Boolean));
   if (!piecesLeft(state.players[next]) || full) {
     state.phase = 'end';
@@ -732,7 +746,7 @@ const CATALOG = ['plain', ...SPECIAL_IDS].sort((x, y) => costOf(x) - costOf(y));
 function loadMyDecks() {
   try {
     const list = JSON.parse(localStorage.getItem(DECKS_KEY));
-    if (Array.isArray(list)) return list.filter((d) => d && d.id && d.deck);
+    if (Array.isArray(list)) return list.filter((d) => d && d.id && d.deck).map((d) => ({ ...d, deck: Object.fromEntries(Object.entries(d.deck).filter(([id]) => id === 'plain' || ABILITIES[id])) })).filter((d) => deckCount(d.deck));
     const old = JSON.parse(localStorage.getItem('gomoku-deck')); // 前の版で1つだけ保存していたもの
     if (old && typeof old === 'object' && deckCount(old)) return [{ id: 'd1', name: 'じぶんのデッキ', deck: old }];
   } catch (e) { /* 読めなければ空 */ }
@@ -798,6 +812,9 @@ function renderSelect() {
     const add = `<button type="button" class="sel-card sel-new" data-color="${color}"><span class="sel-plus">＋</span>新しいデッキを作る</button>`;
     return `<div class="sel-col" data-color="${color}">${head}<div class="sel-list">${cards}${add}</div></div>`;
   }).join('');
+  const nameField = $('name-field');
+  nameField.hidden = state.mode !== 'online';
+  if (state.mode === 'online') $('my-name').value = loadMyName();
   const go = $('select-go');
   go.hidden = manage;
   go.textContent = pvp ? 'この2つで対戦' : state.mode === 'online' ? 'このデッキで相手をさがす' : 'このデッキで対戦';
@@ -1086,6 +1103,7 @@ function startGame(seed = newSeed()) {
   state.turn = 'b';
   state.selected = 0;
   state.sealed = null;
+  state.chainTurn = null;
   state.jammed = null;
   state.lastMove = null;
   state.fx = [];
@@ -1274,7 +1292,7 @@ function renderPanel(color) {
         if (sealed && c.ability !== 'plain') cls.push('is-sealed');
         const blocked = myTurn && cardBlocked(c, color);
         if (blocked) cls.push('is-blocked');
-        const tipText = sealed && c.ability !== 'plain' ? '封印されていて、ただの石になる' : blocked ? '相手にリーチがあるので、いまは置けない' : ab.desc;
+        const tipText = sealed && c.ability !== 'plain' ? '封印されていて、ただの石になる' : blocked ? '連続のあとは、連続を置けない' : ab.desc;
         const tip = tipText ? `<span class="hand-tip" role="tooltip"><span class="tip-demo mini"></span><b>${ab.name}</b>${tipText}</span>` : '';
         return `<button type="button" class="${cls.join(' ')}" data-index="${i}" ${active ? '' : 'disabled'} role="radio" aria-checked="${selected}" aria-label="${ab.name}${ab.desc ? `：${ab.desc}` : ''}">
           ${stoneHTML(color, c.ability)}<span class="hand-name">${ab.name}</span>${active ? `<span class="hand-key">${i + 1}</span>` : ''}${tip}
@@ -1470,7 +1488,6 @@ function showResult(mover) {
     if (line.some((p) => p.ability === 'spy' && p.owner === state.winner && p.color !== state.winner)) sub = 'スパイが効いた';
     else if (state.winner !== mover) sub = `${playerName(mover)}が${playerName(state.winner)}の列をつくってしまった`;
     else if (state.winKind === 'flag') sub = '旗のまわりを囲んだ';
-    else if (state.winKind === 'square') sub = '結束の正方形ができた';
     else if (line.some((p) => p.ability === 'joker' && p.color !== state.winner)) sub = '相手のジョーカーで揃った';
     else sub = `${state.moveCount}手目で決着`;
   }
@@ -1509,10 +1526,10 @@ async function startOnline() {
       const seed = newSeed();
       const myColor = Math.random() < 0.5 ? 'b' : 'w';
       Net.send('start', { seed, guestColor: other(myColor) });
-      Net.send('deck', { deck: state.myDeck, name: state.myDeckName });
+      Net.send('deck', { deck: state.myDeck, name: state.myDeckName, player: loadMyName() });
       beginOnline(seed, myColor);
     } else {
-      Net.send('deck', { deck: state.myDeck, name: state.myDeckName });
+      Net.send('deck', { deck: state.myDeck, name: state.myDeckName, player: loadMyName() });
       Net.once('start', (d) => beginOnline(d.seed, d.guestColor));
     }
   } catch (err) {
@@ -1530,8 +1547,10 @@ function beginOnline(seed, myColor) {
     if (state.phase !== 'online') return;
     state.mode = 'online';
     state.decks = { [myColor]: state.myDeck, [other(myColor)]: sanitizeDeck(d.deck) };
-    state.deckNames = { [myColor]: state.myDeckName, [other(myColor)]: String(d.name || '相手のデッキ').slice(0, 16) };
-    setTimeout(() => startGame(seed), 500);
+    state.deckNames = { [myColor]: state.myDeckName, [other(myColor)]: cleanName(d.name) || '相手のデッキ' };
+    state.opponentName = cleanName(d.player) || NO_NAME;
+    $('online-sub').textContent = `相手：${state.opponentName}`;
+    setTimeout(() => startGame(seed), 900);
   });
 }
 
@@ -1644,6 +1663,7 @@ function init() {
   $('select-cols').addEventListener('click', onSelectClick);
   $('select-cols').addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target.classList.contains('sel-card')) { e.preventDefault(); onSelectClick(e); } });
   $('select-go').addEventListener('click', confirmSelect);
+  $('my-name').addEventListener('input', (e) => saveMyName(cleanName(e.target.value)));
   $('deck-go').addEventListener('click', saveBuilder);
   $('deck-back').addEventListener('click', () => leaveBuilder(false));
   $('deck-delete').addEventListener('click', deleteBuilder);
@@ -1692,6 +1712,6 @@ if (typeof module !== 'undefined') {
   module.exports = {
     setSeed, SIZE, ABILITIES, ICONS, SPECIAL_IDS, LINE_DIRS,
     findWin, specialWin, lineOwner, countsFor, growth, newBoard, newPiece, playMove, resolvePlacement, snapshot, areaCells, settle, goTraps, mineCheck,
-    state, makePlayer, STARTERS, COST, DECK_POINTS, MAX_COPIES, costOf, deckPoints, deckCount, deckList, hasReach, cardBlocked, pushColumn, makeCard, effectiveAbility, canPlaceAt, inside, other, shuffle,
+    state, makePlayer, STARTERS, COST, DECK_POINTS, MAX_COPIES, costOf, deckPoints, deckCount, deckList, hasReach, cardBlocked, spyCompletes, pushColumn, makeCard, effectiveAbility, canPlaceAt, inside, other, shuffle,
   };
 }

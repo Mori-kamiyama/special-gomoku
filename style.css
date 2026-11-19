@@ -435,7 +435,8 @@ body[data-screen="title"] main { padding-bottom: 0; }
   box-shadow: 0 0 0 3px var(--bg), 0 0 0 6px var(--accent), 0 6px 0 2px var(--accent-soft);
 }
 .player.is-active .hand-piece.is-selected .hand-name { color: var(--accent); }
-.player:not(.is-active) .hand-piece { opacity: 0.4; }
+/* 相手の手札は薄くする。吹き出しまで薄くならないよう、石と名前だけを薄くする */
+.player:not(.is-active) .hand-piece > .stone, .player:not(.is-active) .hand-piece .hand-name { opacity: 0.4; }
 .hand-piece:disabled { cursor: default; }
 .hand-piece.is-sealed .hand-name { text-decoration: line-through; }
 
@@ -1278,3 +1279,27 @@ body[data-screen="title"] main { padding-bottom: 0; }
 @media (min-width: 900px) { .player-deck { order: 9; flex-basis: 100%; max-width: none; } #panel-b .player-deck { text-align: right; } }
 @media (max-width: 899px) { .player-head { flex-wrap: nowrap; } .player-deck { font-size: 11px; } }
 @media (min-width: 900px) { .player-head { row-gap: 0; margin-bottom: 2px; } .player-deck { line-height: 1.2; } }
+
+/* オンライン対戦：自分の名前 */
+.select-foot { flex-wrap: wrap; gap: 10px 16px; align-items: center; }
+.name-field { display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 700; color: var(--muted); }
+.name-field input {
+  width: 11em;
+  padding: 6px 2px;
+  border: none;
+  border-bottom: 2px dashed var(--line);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 17px;
+  outline: none;
+}
+.name-field input:focus { border-bottom-color: var(--accent); }
+.name-field input::placeholder { color: var(--muted); opacity: 0.6; }
+/* 名前の欄は、ボタンのすぐ上に、ボタンと同じ幅で置く */
+.select-foot { flex-direction: column; align-items: center; gap: 10px; }
+.name-field { width: min(100%, 420px); justify-content: center; }
+.name-field input { flex: 1; min-width: 0; text-align: center; }
+
+/* 手札の吹き出しは盤の上に重ねる（白の手札は、HTML では盤より前にあるので、そのままだと盤の後ろに隠れる） */
+.player { position: relative; z-index: 8; }
