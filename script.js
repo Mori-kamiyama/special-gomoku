@@ -104,7 +104,7 @@ const ABILITIES = {
   flipAround: { name: 'あべこべ', desc: 'まわり8マスの石の色を、白と黒で入れ替える', onPlace: (b, x, y) => flipColors(b, DIRS8.map(([dx, dy]) => [x + dx, y + dy])), area: 'ring' },
   revolution: { name: '革命', desc: '盤の石の色が、全部白と黒で入れ替わる', onPlace: (b) => flipColors(b, b.flatMap((row, y) => row.map((_, x) => [x, y]))) },
   swapHands: { name: '交換', desc: '自分と相手の手札を、そっくり入れ替える', onPlace: (b, x, y, c, st) => swapHandsAbility(st) },
-  fastForward: { name: '早送り', desc: '盤の時限爆弾と増殖を、2手ぶん進める', onPlace: (b, x, y, c, st) => fastForwardAbility(b, st) },
+  fastForward: { name: '早送り', desc: '盤の時限爆弾と増殖を、2手ぶん進める', onPlace: (b, x, y, c, st) => fastForwardAbility(b, st), area: 'timers' },
   warp: { name: 'ワープ', desc: 'まわり3×3の石を、盤の真ん中をはさんだ反対側へ飛ばす。飛んだ先の石は消える', onPlace: warpAbility, area: 'warp' },
   sniper: { name: 'スナイパー', desc: '置いたあと、盤のどこかの石を1つ選んで消す', onPlace: sniperAbility, aim: true },
   clone: { name: '分身', desc: '盤の真ん中をはさんだ反対側にも、自分の石が1つ増える', onPlace: (b, x, y, c, st) => cloneAt(b, SIZE - 1 - x, SIZE - 1 - y, c, st), area: 'mirror' },
@@ -632,7 +632,7 @@ const state = {
   players: {},
   myName: null,
   turn: 'b',
-  selected: 0,
+  selected: null,
   sealed: null, // 次の番に超能力が使えない色
   chainTurn: null, // 連続でもらった手の色（その手では連続を使えない）
   jammed: null,
@@ -759,7 +759,7 @@ function playMove(x, y, target = null) {
 
   const wasSealed = state.sealed === color;
   p.hand.splice(state.selected, 1);
-  state.selected = 0;
+  state.selected = null;
   state.moveCount++;
 
   const rolled = id === 'mystery' ? pickMystery() : null; // はてな：くじで決まった超能力
@@ -1468,7 +1468,7 @@ function startGame(seed = newSeed()) {
   state.board = newBoard();
   state.players = { b: makePlayer('b', state.decks.b), w: makePlayer('w', state.decks.w) };
   state.turn = 'b';
-  state.selected = 0;
+  state.selected = null;
   state.sealed = null;
   state.chainTurn = null;
   state.jammed = null;
@@ -1582,7 +1582,7 @@ function renderBoard(board = state.board, fxList = state.fx, final = true) {
       if (winSet.has(key)) classes.push('is-win');
       el.classList.toggle('is-last', final && !!state.lastMove && state.lastMove[0] === x && state.lastMove[1] === y);
       el.innerHTML = p ? pieceHTML(p, classes.join(' '), style) : '';
-      const playable = final && state.phase === 'play' && canPlaceAt(x, y, state.turn, id);
+      const playable = final && state.phase === 'play' && !!card && canPlaceAt(x, y, state.turn, id);
       el.disabled = !state.aim && !playable;
       el.classList.toggle('is-target', playable && !!p);
     }
@@ -1608,6 +1608,9 @@ function areaCells(id, x, y, b) {
   if (area === 'warp') for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { mark(x + dx, y + dy); mark(SIZE - 1 - x - dx, SIZE - 1 - y - dy); }
   if (area === 'sq5') for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) mark(x + dx, y + dy);
   if (area === 'square') for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) mark(x + dx, y + dy);
+  if (area === 'timers') b.forEach((row, cy) => row.forEach((stone, cx) => {
+    if (stone?.ability === 'timeBomb' || stone?.ability === 'grow') mark(cx, cy);
+  }));
   if (area === 'down') for (let cy = y + 1; inside(x, cy) && !b[cy][x]; cy++) mark(x, cy);
   if (area === 'up') for (let cy = y - 1; inside(x, cy) && !b[cy][x]; cy--) mark(x, cy);
   return out;
@@ -1765,21 +1768,13 @@ function renderStatus() {
       + '<button type="button" class="btn-primary btn-small" id="again-inline">もう一局</button>';
     $('again-inline').addEventListener('click', () => (state.mode === 'online' ? backToTitle(true) : startGame()));
   } else {
-    status.innerHTML = `<span class="turn-dot turn-${state.turn}"></span><span class="status-text">${escapeHTML(playerName(state.turn))}の番</span>`;
+    const choose = !selectedCard() && !notMine(state.turn);
+    status.innerHTML = `<span class="turn-dot turn-${state.turn}"></span><span class="status-text">${escapeHTML(playerName(state.turn))}の番</span>`
+      + (choose ? '<span class="status-hint">手札から碁石を選ぶ</span>' : '');
   }
 }
 
-// 選んでいる碁石が使えないとき（スパイとリーチ）は、使える碁石を選び直す
-function fixSelection() {
-  if (state.phase !== 'play') return;
-  const hand = state.players[state.turn].hand;
-  if (hand[state.selected] && !cardBlocked(hand[state.selected], state.turn)) return;
-  const i = hand.findIndex((c) => !cardBlocked(c, state.turn));
-  state.selected = i >= 0 ? i : 0;
-}
-
 function renderGame() {
-  fixSelection();
   renderBoard();
   renderPanel('w');
   renderPanel('b');
@@ -1873,8 +1868,16 @@ async function place(x, y, remote = false, target = null) {
   renderPanel('b');
   renderStatus();
   const special = !HIDDEN_IDS.includes(res.ability);
-  const banner = special ? showBanner(res.ability, color) : null;
   const t = boardTarget();
+  if (res.rolled) {
+    const hidden = snapshot(res.before);
+    hidden[y][x].ability = 'mystery';
+    renderBoard(hidden, [{ kind: 'placed', x, y }], false);
+    Sound.ability('mystery');
+    FX.burst(t, 'mystery', x, y);
+    await sleep(350);
+  }
+  const banner = special ? showBanner(res.ability, color) : null;
   const area = special ? areaCells(res.ability, x, y, res.before) : [];
   Sound.place();
   if (!special) res.steps[0].fx[0].el = 'plain'; // ただの石も、着いて少し震える
@@ -1887,6 +1890,7 @@ async function place(x, y, remote = false, target = null) {
     Sound.charge(FX.elementOf(res.ability), FX.anticipationOf(res.ability), res.ability);
     await sleep(FX.anticipationOf(res.ability) * 1000);
     Sound.ability(res.ability);
+    if (res.ability === 'swapHands') animateSwappedHands();
   }
   // 衝撃 → 重力 → 囲碁・地雷、と段階ごとに盤を描き、音を鳴らす
   for (let i = 0; i < res.steps.length; i++) {
@@ -1943,6 +1947,19 @@ function drawQueued() {
   if (!q || !card) return;
   const id = effectiveAbility(card, state.turn);
   cellEl(q[0], q[1]).insertAdjacentHTML('beforeend', stoneHTML(id === 'spy' ? other(state.turn) : state.turn, id, 'is-ghost is-pending is-queued'));
+}
+
+function animateSwappedHands() {
+  const hands = ['b', 'w'].map((color) => $(`panel-${color}`).querySelector('.hand'));
+  const bounds = hands.map((hand) => hand.getBoundingClientRect());
+  hands.forEach((hand, i) => {
+    const x = (bounds[1 - i].left - bounds[i].left) * 0.35;
+    const y = (bounds[1 - i].top - bounds[i].top) * 0.35;
+    hand.animate([
+      { transform: `translate(${x}px, ${y}px)`, opacity: 0.25 },
+      { transform: 'translate(0, 0)', opacity: 1 },
+    ], { duration: 410, easing: 'ease-out' });
+  });
 }
 
 function showBanner(ability, color, text) {

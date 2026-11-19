@@ -435,14 +435,34 @@
   // 碁石ごとの衝撃の組み合わせ。shake は盤の揺れの強さ（効果が大きいほど強く）
   const RECIPE = {
     bomb: { el: 'fire', impact: (e, x, y, s) => IMPACT.fire(e, x, y, s, { pw: 1 }), shake: 1.1 },
-    // 天変地異：大きな渦と、強い揺れ
-    cataclysm: { el: 'vortex', impact: (e, x, y, s) => { IMPACT.vortex(e, x, y, s, { dir: 1 }); P.ring(e, x, y, s, { col: ELEMENTS.vortex.c[1], wid: 0.2, far: 4, dur: 0.7 }); }, shake: 1.6 },
-    mystery: { el: 'shadow', impact: (e, x, y, s) => IMPACT.shadow(e, x, y, s, { sparkle: true }) },
-    flipAround: { el: 'invert', impact: (e, x, y, s) => IMPACT.invert(e, x, y, s), shake: 0.4 },
-    // 革命：盤いっぱいに広がる反転の輪
-    revolution: { el: 'invert', impact: (e, x, y, s) => { IMPACT.invert(e, x, y, s); P.ring(e, x, y, s, { col: ELEMENTS.invert.c[1], wid: 0.3, far: 7, dur: 0.8 }); }, shake: 1.4 },
-    swapHands: { el: 'wind', impact: (e, x, y, s) => IMPACT.wind(e, x, y, s), shake: 0.2 },
-    fastForward: { el: 'thunder', impact: (e, x, y, s) => IMPACT.thunder(e, x, y, s, { bolts: 2 }), shake: 0.2 },
+    // 天変地異：盤の中心を軸に、弧が時計回りに走る
+    cataclysm: {
+      center: true, shake: 1.1,
+      impact(e, x, y, s) {
+        const [deep, blue, pale] = ELEMENTS.vortex.c;
+        for (const [radius, col, delay] of [[1.8, deep, 0], [3.3, blue, 0.04], [4.5, pale, 0.08]]) {
+          P.arcs(e, x, y, s, { r0: radius, r1: radius, col, width: s * 0.1, dur: 0.55, delay, turn: Math.PI / 2 });
+        }
+      },
+    },
+    mystery: { impact: (e, x, y, s) => IMPACT.shadow(e, x, y, s, { sparkle: true }) },
+    flipAround: { impact: (e, x, y, s) => IMPACT.invert(e, x, y, s), shake: 0.4 },
+    // 革命：白と黒の波が盤の中心から外側へ広がる
+    revolution: {
+      center: true, shake: 0.9,
+      impact(e, x, y, s) {
+        P.ring(e, x, y, s, { col: INK, wid: 0.28, far: 8, dur: 0.62, split: 0 });
+        P.ring(e, x, y, s, { col: WHITE, wid: 0.17, far: 8, dur: 0.62, delay: 0.07, split: 0 });
+      },
+    },
+    swapHands: {
+      shake: 0.2,
+      impact(e, x, y, s) {
+        P.ray(e, x - s * 1.5, y - s * 0.28, s, { a: 0, len: 3, col: ELEMENTS.wind.c[0], width: s * 0.12 });
+        P.ray(e, x + s * 1.5, y + s * 0.28, s, { a: Math.PI, len: 3, col: WHITE, width: s * 0.12 });
+      },
+    },
+    fastForward: { impact: (e, x, y, s) => IMPACT.thunder(e, x, y, s, { bolts: 2 }), shake: 0.2 },
     // ワープ：渦が巻いて、反対側へ
     warp: { el: 'vortex', impact: (e, x, y, s) => IMPACT.vortex(e, x, y, s, { contract: true }), shake: 0.3 },
     // スナイパー：照準の輪が縮んで、撃つ（当たった石は、あとの段階で砕ける）
@@ -549,7 +569,19 @@
         const cells = [];
         for (const [dx, dy] of rc.line) for (let k = 1; k <= 2; k++) { const [cx, cy] = t.map(x + dx * k, y + dy * k); cells.push([cx, cy, k]); }
         IMPACT.fireLine(e, px, py, s, { cells, dirs: rc.line.map(([dx, dy]) => Math.atan2(dy, dx)) });
-      } else rc.impact(e, px, py, s);
+      } else {
+        const center = Math.floor(SIZE / 2);
+        const [cx, cy] = rc.center ? t.map(center, center) : [px, py];
+        rc.impact(e, cx, cy, s);
+      }
+      if (ability === 'fastForward') {
+        for (const [tx, ty] of opts.area || []) {
+          const [cx, cy] = t.map(tx, ty);
+          for (const delay of [0, 0.12]) {
+            P.ring(e, cx, cy, s, { col: ELEMENTS.thunder.c[1], wid: 0.12, near: 0.3, far: 0.8, split: 0, dur: 0.26, delay });
+          }
+        }
+      }
       if (rc.shake && t.shakeEl) FX.shake(t.shakeEl, rc.shake);
       // 同じ段階で起きたこと（爆弾で消えた石のかけら、分身の先、返った石…）
       if (opts.fx) FX.after(t, opts.fx.filter((f) => !(f.kind === 'placed' && f.x === x && f.y === y)), null, { quiet: true, origin: [x, y], ability });
@@ -646,6 +678,12 @@
   const DEMOS = {
     push: { pre: [[1, 0, 'w'], [-1, -1, 'b'], [0, 1, 'w'], [-1, 1, 'w']], at: [0, 0] },
     suck: { pre: [[2, 0, 'w'], [-2, -2, 'b'], [0, 2, 'w'], [-2, 2, 'w']], at: [0, 0] },
+    cataclysm: { pre: [[-2, -1, 'b'], [-1, 0, 'w'], [2, 1, 'w']], at: [0, -1] },
+    mystery: { pre: [[-1, 0, 'w'], [0, -1, 'b'], [1, 1, 'w']], at: [0, 0], place: 'flipAround' },
+    flipAround: { pre: [[-1, 0, 'w'], [0, -1, 'b'], [1, 1, 'w'], [2, 2, 'b']], at: [0, 0] },
+    revolution: { pre: [[-2, -2, 'w'], [1, -1, 'b'], [2, 2, 'w']], at: [0, 0] },
+    swapHands: { pre: [[-2, 1, 'w'], [2, -1, 'b']], at: [0, 0] },
+    fastForward: { pre: [[-1, -1, 'w', 'timeBomb'], [-2, -1, 'b'], [2, 1, 'b', 'grow', 1]], at: [1, -1] },
     timeBomb: { pre: [[1, 0, 'w'], [0, -1, 'b']], at: [0, 0], follow: [[2, -2, 'w'], [-2, 2, 'b']] },
     warp: { pre: [[-2, -1, 'w'], [-1, -2, 'b'], [0, 0, 'w'], [2, 1, 'w']], at: [-1, -1] },
     sniper: { pre: [[2, -1, 'w'], [1, 1, 'w'], [-1, 0, 'b']], at: [-1, 1], target: [2, -1] },
@@ -733,6 +771,13 @@
       const res = resolvePlacement(board, ax, ay, 'b', placeAb, fakeState);
       const t = miniTarget(root);
       const area = areaCells(showAb || 'plain', ax, ay, res.before);
+      if (ability === 'mystery') {
+        const hidden = snapshot(res.before);
+        hidden[ay][ax].ability = 'mystery';
+        drawMini(root, hidden, [{ kind: 'placed', x: ax, y: ay }]);
+        FX.burst(t, ability, ax, ay);
+        await wait(350, token);
+      }
       // 予兆：置いただけの盤を見せ、石をためる
       if (showAb && RECIPE[showAb]) {
         drawMini(root, res.before, [{ kind: 'placed', x: ax, y: ay }], [], [ax, ay]);
