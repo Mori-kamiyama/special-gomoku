@@ -1303,3 +1303,23 @@ body[data-screen="title"] main { padding-bottom: 0; }
 
 /* 手札の吹き出しは盤の上に重ねる（白の手札は、HTML では盤より前にあるので、そのままだと盤の後ろに隠れる） */
 .player { position: relative; z-index: 8; }
+
+/* 盤の上の碁石の説明（手札の吹き出しと同じ見た目） */
+.stone-tip {
+  position: fixed;
+  z-index: 60;
+  width: max-content;
+  max-width: 240px;
+  padding: 8px 12px 10px;
+  border-radius: 8px;
+  background: var(--text);
+  color: var(--bg);
+  font-size: 13px;
+  line-height: 1.5;
+  pointer-events: none;
+  animation: tip-in 0.14s ease-out;
+}
+.stone-tip b { display: block; font-size: 14px; }
+.stone-tip .tip-owner { display: block; margin-bottom: 3px; font-size: 11.5px; opacity: 0.7; }
+.stone-tip .tip-demo { display: block; width: 120px; margin-bottom: 8px; }
+@keyframes tip-in { from { opacity: 0; transform: translateY(4px); } }

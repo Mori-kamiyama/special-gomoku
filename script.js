@@ -704,6 +704,7 @@ const $ = (id) => document.getElementById(id);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function showScreen(name) {
+  hideStoneTip();
   for (const s of ['title', 'select', 'deck', 'game', 'online']) $(`${s}-screen`).hidden = s !== name;
   document.body.dataset.screen = name;
   $('log-btn').hidden = name !== 'game';
@@ -1162,8 +1163,8 @@ function buildBoard() {
       cell.setAttribute('aria-label', `${colLabel(x)}${y + 1}`);
       cell.addEventListener('pointerup', (e) => onCellTap(x, y, e.pointerType));
       cell.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onCellTap(x, y, 'key'); } });
-      cell.addEventListener('pointerenter', (e) => { if (e.pointerType === 'mouse') showPreview(x, y); });
-      cell.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') clearPreview(); });
+      cell.addEventListener('pointerenter', (e) => { if (e.pointerType === 'mouse') { showPreview(x, y); hoverStone(x, y); } });
+      cell.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') { clearPreview(); hideStoneTip(); } });
       board.appendChild(cell);
     }
   }
@@ -1239,6 +1240,63 @@ function areaCells(id, x, y, b) {
   if (area === 'down') for (let cy = y + 1; inside(x, cy) && !b[cy][x]; cy++) mark(x, cy);
   if (area === 'up') for (let cy = y - 1; inside(x, cy) && !b[cy][x]; cy--) mark(x, cy);
   return out;
+}
+
+// ===== 盤の上の碁石の説明 =====
+// マウスを1秒乗せるか、押すと出る。手札の吹き出しと同じ形（お試しの盤＋名前＋説明）
+let stoneTipTimer = null;
+let stoneTipAt = null;
+function hoverStone(x, y) {
+  clearTimeout(stoneTipTimer);
+  if (!state.board[y] || !state.board[y][x]) return;
+  stoneTipTimer = setTimeout(() => showStoneTip(x, y), 1000);
+}
+function toggleStoneTip(x, y) {
+  if (stoneTipAt && stoneTipAt[0] === x && stoneTipAt[1] === y) { hideStoneTip(); return; }
+  showStoneTip(x, y);
+}
+function hideStoneTip() {
+  clearTimeout(stoneTipTimer);
+  stoneTipAt = null;
+  const tip = $('stone-tip');
+  if (!tip || tip.hidden) return;
+  const demo = tip.querySelector('.mini');
+  if (demo) Demo.stop(demo);
+  tip.hidden = true;
+}
+function showStoneTip(x, y) {
+  const p = state.board[y] && state.board[y][x];
+  const cellEl = $('board').querySelector(`.cell[data-x="${x}"][data-y="${y}"]`);
+  if (!p || !cellEl) return;
+  let tip = $('stone-tip');
+  if (!tip) {
+    tip = document.createElement('div');
+    tip.id = 'stone-tip';
+    tip.className = 'stone-tip';
+    tip.setAttribute('role', 'tooltip');
+    document.body.appendChild(tip);
+  }
+  const old = tip.querySelector('.mini');
+  if (old) Demo.stop(old);
+  const ab = ABILITIES[p.ability] || ABILITIES.plain;
+  const owner = p.color === 'n' ? '誰のものでもない' : `${nameOf(p.owner || p.color)}の碁石`;
+  const desc = p.ability === 'plain' ? '超能力のない、ふつうの碁石'
+    : p.ability === 'block' ? '石垣が立てた、誰のものでもない石。どの列にも入らない'
+    : ab.desc;
+  const showDemo = Demo.has(p.ability);
+  tip.innerHTML = `${showDemo ? '<span class="tip-demo mini"></span>' : ''}<b>${ab.name}</b><span class="tip-owner">${owner}</span>${desc}`;
+  tip.hidden = false;
+  // 碁石の上に出す。上に場所がなければ下に。左右は画面からはみ出さないように
+  const r = cellEl.getBoundingClientRect();
+  const t = tip.getBoundingClientRect();
+  let left = r.left + r.width / 2 - t.width / 2;
+  left = Math.max(8, Math.min(left, window.innerWidth - t.width - 8));
+  let top = r.top - t.height - 8;
+  if (top < 8) top = r.bottom + 8;
+  tip.style.left = `${left}px`;
+  tip.style.top = `${top}px`;
+  stoneTipAt = [x, y];
+  if (showDemo) Demo.start(tip.querySelector('.mini'), p.ability);
 }
 
 // 置く前の見た目：置く石の影と、効果の届く範囲
@@ -1361,8 +1419,12 @@ function renderLog() {
 // タッチでは、1回目のタップで場所を選び、同じマスをもう一度タップして置く
 function onCellTap(x, y, pointerType) {
   const card = selectedCard();
-  if (state.phase !== 'play' || !card || notMine(state.turn) || state.cpuThinking) return;
-  if (!canPlaceAt(x, y, state.turn, effectiveAbility(card, state.turn))) return;
+  const cell = state.board[y] && state.board[y][x];
+  const canPlace = state.phase === 'play' && card && !notMine(state.turn) && !state.cpuThinking && canPlaceAt(x, y, state.turn, effectiveAbility(card, state.turn));
+  // 置けない碁石の上を押したら、その碁石の説明を出す（もう一度押すと閉じる）
+  if (cell && !canPlace) { toggleStoneTip(x, y); return; }
+  hideStoneTip();
+  if (!canPlace) return;
   // 演出の途中なら予約する（先行入力）。同じマスをもう一度押すと取り消し
   if (state.busy) {
     const same = state.queued && state.queued[0] === x && state.queued[1] === y;
@@ -1384,6 +1446,7 @@ function onCellTap(x, y, pointerType) {
 }
 
 async function place(x, y, remote = false) {
+  hideStoneTip(); // 盤が変わるので、碁石の説明は閉じる
   const color = state.turn;
   const sent = selectedCard();
   if (state.mode === 'online' && !remote && sent) Net.send('move', { id: sent.id, x, y });
@@ -1696,6 +1759,9 @@ function init() {
   document.addEventListener('keydown', onKey);
   // 最初に触ったときに、録音の素材を読み込んでおく（ブラウザは触る前に音を鳴らせない）
   document.addEventListener('pointerdown', () => Sound.preload(), { once: true });
+  // 盤の外をタップしたら、碁石の説明を閉じる
+  document.addEventListener('pointerdown', (e) => { if (!e.target.closest('.board')) hideStoneTip(); });
+  window.addEventListener('scroll', hideStoneTip, { passive: true });
   // 盤の外をタップしたら、選んでいたマスを取り消す
   document.addEventListener('pointerdown', (e) => {
     if (state.pending && !e.target.closest('.board') && !e.target.closest('.hand')) {
