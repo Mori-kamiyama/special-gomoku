@@ -959,7 +959,6 @@ body[data-screen="title"] main { padding-bottom: 0; }
 .deck-meter.is-bump .meter-bar { animation: bump 0.32s; }
 .deck-meter.is-bump .meter-num:first-child b { color: var(--accent); }
 .meter-nums { display: flex; gap: 18px; align-items: flex-end; }
-.meter-clear { margin-left: auto; align-self: center; font-size: 12.5px; }
 .meter-num { display: flex; align-items: baseline; gap: 6px; }
 .meter-num b { font-family: var(--font-display); font-weight: 400; font-size: clamp(26px, 4.2vh, 36px); line-height: 1; font-variant-numeric: tabular-nums; transition: color 0.2s; }
 .meter-num small { font-size: 12px; font-weight: 700; color: var(--muted); }
@@ -1046,7 +1045,7 @@ body[data-screen="title"] main { padding-bottom: 0; }
 .hand-piece.is-blocked .hand-name { text-decoration: line-through; color: var(--muted); }
 .hand-piece.is-bump { animation: bump 0.32s; }
 /* デッキの見出しまわりの細かい直し */
-.meter-num small, .meter-clear { white-space: nowrap; }
+.meter-num small { white-space: nowrap; }
 .meter-nums { gap: 14px; }
 .deck-starters { min-width: 0; }
 .deck-head .phase-call { flex-wrap: nowrap; white-space: nowrap; }
@@ -1267,7 +1266,8 @@ body[data-screen="title"] main { padding-bottom: 0; }
 .templates-label { flex: none; font-size: 12px; font-weight: 700; color: var(--muted); writing-mode: vertical-rl; letter-spacing: 0.1em; }
 .deck-actions { display: flex; align-items: center; gap: 14px; }
 .deck-actions .deck-go { flex: 1; }
-.deck-delete { flex: none; }
+.deck-delete { flex: none; width: 44px; height: 44px; border-radius: 8px; }
+.deck-delete:hover, .deck-delete:focus-visible { color: var(--accent); }
 /* 小さな漢字が太い見出しの字でつぶれないよう、決定のボタンは本文の字にする */
 .deck-go, .select-go { font-family: var(--font-body); font-size: 17px; letter-spacing: 0.04em; }
 .meter-nums { gap: 10px; }

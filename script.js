@@ -1358,7 +1358,6 @@ function renderDeck(full = false) {
     <div class="meter-nums">
       <span class="meter-num"><b>${left}</b><small>のこりポイント</small></span>
       <span class="meter-num"><b>${count}</b><small>置ける碁石</small></span>
-      <button type="button" class="btn-text meter-clear" ${count ? '' : 'disabled'}>空にする</button>
     </div>
     <div class="meter-bar" style="--n:${DECK_POINTS}">${cells.join('')}</div>`;
 
@@ -1366,13 +1365,6 @@ function renderDeck(full = false) {
   $('deck-bag').innerHTML = deckList(deck).sort((x, y) => CATALOG.indexOf(y) - CATALOG.indexOf(x))
     .map((id) => stoneHTML(color, id, '', `data-id="${id}"`)).join('');
 
-  $('deck-meter').querySelector('.meter-clear').onclick = () => {
-    state.edit = {};
-    state.deckSource = null;
-    state.build.dirty = true;
-    Sound.select();
-    renderDeck();
-  };
   renderDeckInfo();
   $('deck-go').disabled = !!deckError(deck);
 }
