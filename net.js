@@ -2,6 +2,7 @@
 //   Net.find(onCount) … 知らない人と当たる。見つかったら { isHost } を返す（誘った側がホスト）
 //   Net.send(type, data) / Net.on(type, fn) / Net.once(type, fn) … 相手との手のやり取り
 //   Net.onLeave(fn) … 相手との接続が切れたとき
+//   Net.finish() … 対局が終わったら、相手側の結果が確定するのを待って切断する
 //   Net.leave() … やめる（ロビーと対戦の部屋から抜ける）
 // 相手さがし：ロビーにいる人を ID の順に並べ、自分より ID が大きい空いている人だけを誘う（同時に誘い合わない）。
 // 誘いを受けた人は、誰も誘っていなければ受ける。決まったら、2人だけの部屋に移る。
@@ -24,16 +25,22 @@
       const { iceServers: turn } = await r.json();
       // TURN は TCP の2つだけ：80番の TCP と、443番の TLS（会社や学校の回線でも通りやすい）。UDP は上の理由で使わない
       const relay = (turn || []).map((s) => ({ ...s, urls: [].concat(s.urls).filter((u) => u.startsWith('turn')) })).filter((s) => s.urls.length);
-      const pickOne = (re) => relay.find((s) => s.urls.some((u) => re.test(u)));
+      const pickOne = (re) => {
+        const server = relay.find((s) => s.urls.some((u) => re.test(u)));
+        return server && { ...server, urls: server.urls.find((u) => re.test(u)) };
+      };
       const chosen = [pickOne(/^turn:.*transport=tcp/), pickOne(/^turns:/)].filter(Boolean);
       if (chosen.length) iceServers = STUN.concat(chosen);
     } catch (e) { /* 取れなければ、同じ機械の中どうしだけつながる */ }
   }
   const config = () => ({ appId: APP_ID, rtcConfig: { iceServers } });
   const MATCH_TIMEOUT_MS = 15000; // 部屋を移ってから相手が来るまで待つ時間
+  const FINISH_TIMEOUT_MS = 8000; // 終了通知に対応していない相手でも、結果画面にいる間はつなぎ続けない
 
   let lib = null;
   let lobby = null, match = null, timer = null;
+  let matchTimer = null, finishTimer = null;
+  let searchId = 0;
   let sendMsg = null;
   const handlers = {};   // type → [fn]
   const pending = {};    // 受け取る人がまだいない手（type → [data]）
@@ -59,10 +66,15 @@
   }
 
   function cleanup() {
+    searchId++;
     clearInterval(timer); timer = null;
-    try { if (lobby) lobby.leave(); } catch (e) { /* すでに抜けている */ }
-    try { if (match) match.leave(); } catch (e) { /* すでに抜けている */ }
+    clearTimeout(matchTimer); matchTimer = null;
+    clearTimeout(finishTimer); finishTimer = null;
+    const rooms = [lobby, match];
     lobby = null; match = null; sendMsg = null; partner = null;
+    for (const room of rooms) {
+      try { room?.leave(); } catch (e) { /* すでに抜けている */ }
+    }
     for (const k of Object.keys(pending)) delete pending[k];
   }
 
@@ -70,8 +82,10 @@
     // word（あいことば）を渡すと、同じあいことばの人だけが集まる部屋で相手をさがす（あいことばで中身も暗号にする）
     async find(onCount = () => {}, word = '') {
       cleanup();
+      const id = searchId;
       const { joinRoom, selfId } = await load();
-      await loadIce();
+      if (searchId === id) await loadIce();
+      if (searchId !== id) throw new DOMException('相手さがしを中止しました', 'AbortError');
       lobby = word ? joinRoom({ ...config(), password: word }, `room-${hash(word)}`) : joinRoom(config(), 'lobby');
       const [sendInvite, getInvite] = lobby.makeAction('invite');
       const [sendAnswer, getAnswer] = lobby.makeAction('answer');
@@ -98,13 +112,14 @@
         timer = setInterval(tryInvite, 700);
 
         getInvite((_, from) => {
+          if (lobby !== myLobby) return;
           if (engaged || inviting) { sendAnswer({ ok: false }, from); return; }
           engaged = true;
           sendAnswer({ ok: true }, from);
           go(from, false);
         });
         getAnswer((d, from) => {
-          if (from !== inviting) return;
+          if (lobby !== myLobby || from !== inviting) return;
           inviting = null;
           if (d.ok && !engaged) { engaged = true; go(from, true); }
         });
@@ -116,19 +131,34 @@
           partner = other;
           const roomId = isHost ? `m-${selfId}-${other}` : `m-${other}-${selfId}`;
           setTimeout(() => { try { myLobby.leave(); } catch (e) { /* すでに抜けている */ } if (lobby === myLobby) lobby = null; }, 800);
-          match = joinRoom(config(), roomId);
-          const [send, get] = match.makeAction('msg');
+          const myMatch = match = joinRoom(config(), roomId);
+          const [send, get] = myMatch.makeAction('msg');
           sendMsg = send;
-          get((m, from) => { if (from === partner) deliver(m.t, m.d); });
+          get((m, from) => {
+            if (match !== myMatch || from !== partner) return;
+            if (m.t === 'finish') {
+              if (finishTimer !== null) cleanup();
+              return;
+            }
+            deliver(m.t, m.d);
+          });
           let joined = false;
-          const giveUp = setTimeout(() => { if (!joined) { cleanup(); reject(new Error('timeout')); } }, MATCH_TIMEOUT_MS);
-          match.onPeerJoin((id) => {
-            if (id !== partner || joined) return;
+          matchTimer = setTimeout(() => {
+            cleanup();
+            reject(new Error('timeout'));
+          }, MATCH_TIMEOUT_MS);
+          myMatch.onPeerJoin((id) => {
+            if (match !== myMatch || id !== partner || joined) return;
             joined = true;
-            clearTimeout(giveUp);
+            clearTimeout(matchTimer); matchTimer = null;
             resolve({ isHost });
           });
-          match.onPeerLeave((id) => { if (id === partner && leaveFn) leaveFn(); });
+          myMatch.onPeerLeave((id) => {
+            if (match !== myMatch || id !== partner || !joined) return;
+            const finished = finishTimer !== null;
+            cleanup();
+            if (!finished && leaveFn) leaveFn();
+          });
         }
       });
     },
@@ -145,6 +175,12 @@
       Net.on(type, wrap);
     },
     onLeave(fn) { leaveFn = fn; },
+    finish() {
+      if (!sendMsg || !partner || finishTimer !== null) return;
+      // 最後の手と同じ順序付きチャンネルで送り、双方が結果を表示できるまで待つ。
+      finishTimer = setTimeout(cleanup, FINISH_TIMEOUT_MS);
+      sendMsg({ t: 'finish', d: null }, partner).catch(() => {});
+    },
     leave() { cleanup(); },
   };
   window.Net = Net;

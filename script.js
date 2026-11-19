@@ -1902,7 +1902,12 @@ async function place(x, y, remote = false, target = null) {
   state.busy = false;
   state.fx = [];
   renderGame();
-  if (state.phase === 'end') { state.queued = null; showResult(color); return; }
+  if (state.phase === 'end') {
+    state.queued = null;
+    if (state.mode === 'online') Net.finish();
+    showResult(color);
+    return;
+  }
   // 予約した手を置く（盤が変わって置けなくなっていたら取り消す）
   const q = state.queued;
   state.queued = null;
@@ -2029,7 +2034,7 @@ async function startOnline() {
       Net.once('start', (d) => beginOnline(d.seed, d.guestColor));
     }
   } catch (err) {
-    if (state.phase !== 'online') return;
+    if (err.name === 'AbortError' || state.phase !== 'online') return;
     $('online-title').textContent = 'つながりませんでした';
     $('online-sub').textContent = 'もう一度、タイトルからためしてください';
   }
