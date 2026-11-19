@@ -94,7 +94,7 @@ const ABILITIES = {
   grow: { name: '増殖', desc: '盤にある間、自分の番が2回来るたびに、隣の空きマスに石が1つ増える', area: 'cross' },
   othello: { name: 'オセロ', desc: '相手の石をちょうど1個はさんだら、その石を自分の色にする', onPlace: othelloAbility },
   go: { name: '囲碁', desc: '盤にある間、隣の相手の石が囲まれて逃げ場をなくしたら取る', area: 'cross' },
-  chain: { name: '連続', desc: 'もう1回置ける。続けて連続は置けない', extraTurn: true },
+  chain: { name: '連続', desc: '手札のただの石をもう1つ置ける。なければ相手の番', extraTurn: true },
   gravity: { name: '重力', desc: 'いつでも下へ落ちる。下に続く石も一緒に押して落とす', area: 'down' },
   antigravity: { name: '反重力', desc: 'いつでも上へ昇る。上に続く石も一緒に押して昇らせる', area: 'up' },
   spin: { name: '回転', desc: 'まわりの8マスを、時計回りに1つずらす', onPlace: (b, x, y) => spinRing(b, x, y, 1), area: 'ring' },
@@ -584,7 +584,7 @@ function shuffle(arr) {
 // ===== デッキ =====
 // 24ポイントまで組める。ただの石は1ポイント。強い碁石ほど高い（数と強さのトレードオフ）
 // 碁石の追加・削除、コスト・能力・対局ルールの変更時に上げる。UI の変更では上げない。
-const RULES_VERSION = 4;
+const RULES_VERSION = 5;
 const DECK_POINTS = 24;
 const MAX_COPIES = 3; // 同じ超能力は3つまで
 const COST = {
@@ -592,8 +592,8 @@ const COST = {
   gravity: 2, antigravity: 2, mine: 2, jam: 2, go: 2, weight: 2, shield: 2, wall: 2, joker: 2, push: 2,
   mystery: 2, fastForward: 2,
   timeBomb: 3, warp: 3, swapHands: 3, rowBomb: 3, colBomb: 3, spin: 3, spinBack: 3, clone: 3, cloneH: 3, cloneV: 3, seal: 3, suck: 3, flag: 3,
-  bomb: 4, diagBomb: 4, sniper: 4, takeover: 4, grow: 4, chain: 4,
-  othello: 5, cataclysm: 5, flipAround: 5, nuke: 6,
+  bomb: 4, diagBomb: 4, sniper: 4, takeover: 4, grow: 4,
+  chain: 5, othello: 5, cataclysm: 5, flipAround: 5, nuke: 6,
   revolution: 8,
   spy: 3, // リーチがあると置けないので、安くした
 };
@@ -635,7 +635,7 @@ const state = {
   turn: 'b',
   selected: null,
   sealed: null, // 次の番に超能力が使えない色
-  chainTurn: null, // 連続でもらった手の色（その手では連続を使えない）
+  chainTurn: null, // 連続でもらった手の色（その手ではただの石だけ置ける）
   jammed: null,
   lastMove: null,
   fx: [],
@@ -698,9 +698,9 @@ function hasReach(board, c) {
   return false;
 }
 
-// 手札の碁石を、いま使えるか（連続でもらった手では、連続は使えない）
+// 手札の碁石を、いま使えるか（連続でもらった手では、ただの石だけ置ける）
 function cardBlocked(card, color) {
-  return effectiveAbility(card, color) === 'chain' && state.chainTurn === color;
+  return state.chainTurn === color && card.ability !== 'plain';
 }
 
 // スパイは、相手があと1つで揃う場所（リーチの場所）には置けない。置くと相手の5つ目になって、勝ちを横取りできてしまう
@@ -804,27 +804,25 @@ function playMove(x, y, target = null) {
     return { ok: true, ability: actual, rolled, steps, before, winner, extraTurn: false };
   }
 
-  // 次の番。碁石がない人は飛ばし、2人ともなければ引き分け
-  let next = ab.extraTurn ? color : other(color);
-  state.chainTurn = ab.extraTurn ? color : null; // 連続でもらった手か（その手では連続を使えない）
+  // 連続の追加手は、補充後の手札にただの石がある場合だけ。
+  const extraTurn = !!ab.extraTurn && p.hand.some((card) => card.ability === 'plain');
+  let next = extraTurn ? color : other(color);
+  state.chainTurn = extraTurn ? color : null;
+  if (ab.extraTurn && !extraTurn) log('手札にただの石がないので、連続の追加手はなし');
   if (!piecesLeft(state.players[next])) {
     log(`${nameOf(next)}は碁石を使い切った`);
     next = other(next);
-  } else if (state.players[next].hand.every((c) => cardBlocked(c, next))) {
-    log(`${nameOf(next)}は置ける碁石がなくて、番を飛ばした`);
-    next = other(next);
   }
-  if (next !== color) state.chainTurn = null;
   const full = state.board.every((row) => row.every(Boolean));
   if (!piecesLeft(state.players[next]) || full) {
     state.phase = 'end';
     state.winner = null;
     log(full ? '盤が埋まって、引き分け' : '碁石がなくなって、引き分け');
   } else {
-    if (ab.extraTurn && next === color) log(`${nameOf(color)}がもう1回`);
+    if (extraTurn) log(`${nameOf(color)}がもう1回`);
     state.turn = next;
   }
-  return { ok: true, ability: actual, rolled, steps, before, winner: null, extraTurn: !!ab.extraTurn };
+  return { ok: true, ability: actual, rolled, steps, before, winner: null, extraTurn: extraTurn && state.phase === 'play' };
 }
 
 function describeFx(fx) {
@@ -943,7 +941,7 @@ function deckVersionNote(version) {
 
 // 旧コストで組んだデッキは、先にただの石を減らして予算に収める
 function adjustBombCost(deck) {
-  const excess = deckPoints(deck) - DECK_POINTS;
+  const excess = deckPoints(deck) - (deck.chain || 0) - DECK_POINTS;
   if (excess <= 0 || !deck.bomb) return deck;
   const adjusted = { ...deck };
   const plain = Math.min(adjusted.plain || 0, excess);
@@ -956,7 +954,11 @@ function adjustBombCost(deck) {
 function loadMyDecks() {
   try {
     const list = JSON.parse(localStorage.getItem(DECKS_KEY));
-    if (Array.isArray(list)) return list.filter((d) => d && d.id && d.deck).map((d) => ({ ...d, version: d.version ?? null, deck: adjustBombCost(Object.fromEntries(Object.entries(d.deck).filter(([id]) => id === 'plain' || ABILITIES[id]))) })).filter((d) => deckCount(d.deck));
+    if (Array.isArray(list)) return list.filter((d) => d && d.id && d.deck).map((d) => {
+      const version = d.version ?? null;
+      const deck = Object.fromEntries(Object.entries(d.deck).filter(([id]) => id === 'plain' || ABILITIES[id]));
+      return { ...d, version, deck: version === null || version < 3 ? adjustBombCost(deck) : deck };
+    }).filter((d) => deckCount(d.deck));
     const old = JSON.parse(localStorage.getItem('gomoku-deck')); // 前の版で1つだけ保存していたもの
     if (old && typeof old === 'object' && deckCount(old)) return [{ id: 'd1', name: 'じぶんのデッキ', version: null, deck: adjustBombCost(old) }];
   } catch (e) { /* 読めなければ空 */ }
@@ -1740,7 +1742,7 @@ function renderPanel(color) {
         if (sealed && c.ability !== 'plain') cls.push('is-sealed');
         const blocked = myTurn && cardBlocked(c, color);
         if (blocked) cls.push('is-blocked');
-        const tipText = sealed && c.ability !== 'plain' ? '封印されていて、ただの石になる' : blocked ? '連続のあとは、連続を置けない' : ab.desc;
+        const tipText = blocked ? '連続のあとは、ただの石だけ置ける' : sealed && c.ability !== 'plain' ? '封印されていて、ただの石になる' : ab.desc;
         const tip = tipText ? `<span class="hand-tip" role="tooltip"><span class="tip-demo mini"></span><b>${ab.name}</b>${tipText}</span>` : '';
         return `<button type="button" class="${cls.join(' ')}" data-index="${i}" ${active ? '' : 'disabled'} role="radio" aria-checked="${selected}" aria-label="${ab.name}${ab.desc ? `：${ab.desc}` : ''}">
           ${stoneHTML(color, c.ability)}<span class="hand-name">${ab.name}</span>${active ? `<span class="hand-key">${i + 1}</span>` : ''}${tip}
@@ -1751,7 +1753,7 @@ function renderPanel(color) {
     c.addEventListener('click', () => selectCard(Number(c.dataset.index)));
     const demo = c.querySelector('.tip-demo');
     const ability = p.hand[Number(c.dataset.index)].ability;
-    if (demo && Demo.has(ability) && state.sealed !== color) {
+    if (demo && Demo.has(ability) && state.sealed !== color && !c.classList.contains('is-blocked')) {
       c.addEventListener('pointerenter', (e) => { if (e.pointerType === 'mouse') Demo.start(demo, ability); });
       c.addEventListener('pointerleave', () => { Demo.stop(demo); demo.innerHTML = ''; });
     }
@@ -1782,8 +1784,9 @@ function renderStatus() {
     $('again-inline').addEventListener('click', () => (state.mode === 'online' ? backToTitle(true) : startGame()));
   } else {
     const choose = !selectedCard() && !notMine(state.turn);
+    const hint = state.chainTurn === state.turn ? 'ただの石だけ置ける' : choose ? '手札から碁石を選ぶ' : '';
     status.innerHTML = `<span class="turn-dot turn-${state.turn}"></span><span class="status-text">${escapeHTML(playerName(state.turn))}の番</span>`
-      + (choose ? '<span class="status-hint">手札から碁石を選ぶ</span>' : '');
+      + (hint ? `<span class="status-hint">${hint}</span>` : '');
   }
 }
 
@@ -2040,7 +2043,7 @@ async function startOnline() {
     const { isHost } = await Net.find((n) => {
       $('online-sub').textContent = word ? (n > 0 ? '相手が来ました。つないでいます…' : '同じあいことばの相手を待っています')
         : n > 0 ? `いま、ほかに ${n}人がさがしています` : 'ほかにさがしている人を待っています';
-    }, word);
+    }, word, RULES_VERSION);
     if (state.phase !== 'online') return; // やめるが押された
     $('online-title').textContent = '見つかりました！';
     $('online-sub').textContent = '';

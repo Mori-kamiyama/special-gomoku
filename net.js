@@ -1,5 +1,5 @@
 // オンライン対戦の通信。Trystero（サーバーなしの WebRTC。相手さがしは Nostr の公開ネットワークを使う）
-//   Net.find(onCount) … 知らない人と当たる。見つかったら { isHost } を返す（誘った側がホスト）
+//   Net.find(onCount, word, rulesVersion) … 知らない人と当たる。見つかったら { isHost } を返す（誘った側がホスト）
 //   Net.send(type, data) / Net.on(type, fn) / Net.once(type, fn) … 相手との手のやり取り
 //   Net.onLeave(fn) … 相手との接続が切れたとき
 //   Net.finish() … 対局が終わったら、相手側の結果が確定するのを待って切断する
@@ -33,7 +33,7 @@
       if (chosen.length) iceServers = STUN.concat(chosen);
     } catch (e) { /* 取れなければ、同じ機械の中どうしだけつながる */ }
   }
-  const config = () => ({ appId: APP_ID, rtcConfig: { iceServers } });
+  const config = (rulesVersion) => ({ appId: `${APP_ID}-rules-${rulesVersion}`, rtcConfig: { iceServers } });
   const MATCH_TIMEOUT_MS = 15000; // 部屋を移ってから相手が来るまで待つ時間
   const FINISH_TIMEOUT_MS = 8000; // 終了通知に対応していない相手でも、結果画面にいる間はつなぎ続けない
 
@@ -80,13 +80,14 @@
 
   const Net = {
     // word（あいことば）を渡すと、同じあいことばの人だけが集まる部屋で相手をさがす（あいことばで中身も暗号にする）
-    async find(onCount = () => {}, word = '') {
+    async find(onCount = () => {}, word = '', rulesVersion = 1) {
       cleanup();
       const id = searchId;
       const { joinRoom, selfId } = await load();
       if (searchId === id) await loadIce();
       if (searchId !== id) throw new DOMException('相手さがしを中止しました', 'AbortError');
-      lobby = word ? joinRoom({ ...config(), password: word }, `room-${hash(word)}`) : joinRoom(config(), 'lobby');
+      const roomConfig = config(rulesVersion);
+      lobby = word ? joinRoom({ ...roomConfig, password: word }, `room-${hash(word)}`) : joinRoom(roomConfig, 'lobby');
       const [sendInvite, getInvite] = lobby.makeAction('invite');
       const [sendAnswer, getAnswer] = lobby.makeAction('answer');
       const [sendBusy, getBusy] = lobby.makeAction('busy');
@@ -131,7 +132,7 @@
           partner = other;
           const roomId = isHost ? `m-${selfId}-${other}` : `m-${other}-${selfId}`;
           setTimeout(() => { try { myLobby.leave(); } catch (e) { /* すでに抜けている */ } if (lobby === myLobby) lobby = null; }, 800);
-          const myMatch = match = joinRoom(config(), roomId);
+          const myMatch = match = joinRoom(roomConfig, roomId);
           const [send, get] = myMatch.makeAction('msg');
           sendMsg = send;
           get((m, from) => {

@@ -113,7 +113,7 @@
     const st = G.state;
     const moves = [];
     st.players[st.turn].hand.forEach((card, i) => {
-      if (G.cardBlocked(card, st.turn)) return; // 連続のあとの連続は置けない
+      if (G.cardBlocked(card, st.turn)) return; // 連続のあとにはただの石だけ置ける
       const id = G.effectiveAbility(card, st.turn);
       const cells = candidateCells(id, limit);
       if (id === 'sniper') {
