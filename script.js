@@ -583,15 +583,15 @@ function shuffle(arr) {
 // ===== デッキ =====
 // 24ポイントまで組める。ただの石は1ポイント。強い碁石ほど高い（数と強さのトレードオフ）
 // 碁石の追加・削除、コスト・能力・対局ルールの変更時に上げる。UI の変更では上げない。
-const RULES_VERSION = 2;
+const RULES_VERSION = 3;
 const DECK_POINTS = 24;
 const MAX_COPIES = 3; // 同じ超能力は3つまで
 const COST = {
   plain: 1,
   gravity: 2, antigravity: 2, mine: 2, jam: 2, go: 2, weight: 2, shield: 2, wall: 2, joker: 2, push: 2,
   mystery: 2, fastForward: 2,
-  bomb: 3, timeBomb: 3, warp: 3, swapHands: 3, rowBomb: 3, colBomb: 3, spin: 3, spinBack: 3, clone: 3, cloneH: 3, cloneV: 3, seal: 3, suck: 3, flag: 3,
-  diagBomb: 4, sniper: 4, takeover: 4, grow: 4, chain: 4,
+  timeBomb: 3, warp: 3, swapHands: 3, rowBomb: 3, colBomb: 3, spin: 3, spinBack: 3, clone: 3, cloneH: 3, cloneV: 3, seal: 3, suck: 3, flag: 3,
+  bomb: 4, diagBomb: 4, sniper: 4, takeover: 4, grow: 4, chain: 4,
   othello: 5, cataclysm: 5, flipAround: 5, nuke: 6,
   revolution: 8,
   spy: 3, // リーチがあると置けないので、安くした
@@ -603,9 +603,9 @@ const deckCount = (deck) => Object.values(deck).reduce((s, n) => s + n, 0);
 // 名前の順に並べる（オンラインで両方の画面が同じ袋を作れるように）
 const deckList = (deck) => Object.keys(deck).sort().flatMap((id) => Array(deck[id]).fill(id));
 const STARTERS = [
-  { id: 'balance', name: 'バランス', note: 'いろいろ少しずつ', deck: { plain: 8, bomb: 1, spin: 1, grow: 1, seal: 1, clone: 1 } },
+  { id: 'balance', name: 'バランス', note: 'いろいろ少しずつ', deck: { plain: 7, bomb: 1, spin: 1, grow: 1, seal: 1, clone: 1 } },
   { id: 'mass', name: '物量', note: '数で押す', deck: { plain: 14, gravity: 2, mine: 2, shield: 1 } },
-  { id: 'sourspy', name: 'すっぱいスパイ', note: '相手の列にまぎれこむ', deck: { plain: 6, joker: 3, bomb: 1, spy: 3 } },
+  { id: 'sourspy', name: 'すっぱいスパイ', note: '相手の列にまぎれこむ', deck: { plain: 5, joker: 3, bomb: 1, spy: 3 } },
   { id: 'nuclear', name: '一発逆転', note: '核が2つ', deck: { plain: 12, nuke: 2 } },
 ];
 
@@ -851,6 +851,7 @@ function showScreen(name) {
   for (const s of ['title', 'select', 'deck', 'game', 'online']) $(`${s}-screen`).hidden = s !== name;
   document.body.dataset.screen = name;
   $('log-btn').hidden = name !== 'game';
+  $('share-board-btn').hidden = name !== 'game';
 }
 
 function iconHTML(ability) {
@@ -939,13 +940,24 @@ function deckVersionNote(version) {
     return '';
 }
 
+// 旧コストで組んだデッキは、先にただの石を減らして予算に収める
+function adjustBombCost(deck) {
+  const excess = deckPoints(deck) - DECK_POINTS;
+  if (excess <= 0 || !deck.bomb) return deck;
+  const adjusted = { ...deck };
+  const plain = Math.min(adjusted.plain || 0, excess);
+  if (plain) adjusted.plain -= plain;
+  if (excess > plain) adjusted.bomb -= Math.min(adjusted.bomb, Math.ceil((excess - plain) / costOf('bomb')));
+  return Object.fromEntries(Object.entries(adjusted).filter(([, count]) => count > 0));
+}
+
 // 自分のデッキ：[{ id, name, version, deck }]。ブラウザに保存する
 function loadMyDecks() {
   try {
     const list = JSON.parse(localStorage.getItem(DECKS_KEY));
-    if (Array.isArray(list)) return list.filter((d) => d && d.id && d.deck).map((d) => ({ ...d, version: d.version ?? null, deck: Object.fromEntries(Object.entries(d.deck).filter(([id]) => id === 'plain' || ABILITIES[id])) })).filter((d) => deckCount(d.deck));
+    if (Array.isArray(list)) return list.filter((d) => d && d.id && d.deck).map((d) => ({ ...d, version: d.version ?? null, deck: adjustBombCost(Object.fromEntries(Object.entries(d.deck).filter(([id]) => id === 'plain' || ABILITIES[id]))) })).filter((d) => deckCount(d.deck));
     const old = JSON.parse(localStorage.getItem('gomoku-deck')); // 前の版で1つだけ保存していたもの
-    if (old && typeof old === 'object' && deckCount(old)) return [{ id: 'd1', name: 'じぶんのデッキ', version: null, deck: old }];
+    if (old && typeof old === 'object' && deckCount(old)) return [{ id: 'd1', name: 'じぶんのデッキ', version: null, deck: adjustBombCost(old) }];
   } catch (e) { /* 読めなければ空 */ }
   return [];
 }
@@ -1467,6 +1479,8 @@ function startGame(seed = newSeed()) {
   state.winner = undefined;
   state.moveCount = 0;
   state.pending = null;
+  state.aim = null;
+  $('board').classList.remove('is-aiming');
   state.busy = false;
   state.lastActive = null;
   log('黒から');
@@ -1569,7 +1583,7 @@ function renderBoard(board = state.board, fxList = state.fx, final = true) {
       el.classList.toggle('is-last', final && !!state.lastMove && state.lastMove[0] === x && state.lastMove[1] === y);
       el.innerHTML = p ? pieceHTML(p, classes.join(' '), style) : '';
       const playable = final && state.phase === 'play' && canPlaceAt(x, y, state.turn, id);
-      el.disabled = !playable;
+      el.disabled = !state.aim && !playable;
       el.classList.toggle('is-target', playable && !!p);
     }
   }
@@ -1604,6 +1618,7 @@ function areaCells(id, x, y, b) {
 let stoneTipTimer = null;
 let stoneTipAt = null;
 function hoverStone(x, y) {
+  if (state.aim) return;
   clearTimeout(stoneTipTimer);
   if (!state.board[y] || !state.board[y][x]) return;
   stoneTipTimer = setTimeout(() => showStoneTip(x, y), 1000);
@@ -1659,6 +1674,7 @@ function showStoneTip(x, y) {
 
 // 置く前の見た目：置く石の影と、効果の届く範囲
 function showPreview(x, y, force = false) {
+  if (state.aim) return;
   clearPreview();
   const card = selectedCard();
   if (state.phase !== 'play' || (state.busy && !force) || !card) return;
@@ -1673,7 +1689,7 @@ function showPreview(x, y, force = false) {
 }
 
 function clearPreview() {
-  $('board').querySelectorAll('.is-ghost').forEach((g) => g.remove());
+  $('board').querySelectorAll('.is-ghost').forEach((g) => { if (!state.aim || !g.classList.contains('is-pending')) g.remove(); });
   $('board').querySelectorAll('.in-area').forEach((c) => c.classList.remove('in-area'));
 }
 
@@ -1795,8 +1811,7 @@ function endAim() {
   if (!state.aim) return;
   state.aim = null;
   $('board').classList.remove('is-aiming');
-  for (const c of $('board').querySelectorAll('.is-target')) c.classList.remove('is-target');
-  for (const g of $('board').querySelectorAll('.stone.is-ghost.is-pending')) g.remove();
+  renderBoard();
   renderStatus();
 }
 
@@ -1868,7 +1883,7 @@ async function place(x, y, remote = false, target = null) {
     renderBoard(res.before, [{ kind: 'placed', x, y }], false);
     const st = cellEl(x, y).querySelector('.stone');
     if (st) st.classList.add('is-charging');
-    FX.anticipate(t, res.ability, x, y, { area });
+    FX.anticipate(t, res.ability, x, y, { area, target });
     Sound.charge(FX.elementOf(res.ability), FX.anticipationOf(res.ability), res.ability);
     await sleep(FX.anticipationOf(res.ability) * 1000);
     Sound.ability(res.ability);
@@ -2061,7 +2076,9 @@ function expandThen(btn, next) {
   const r = btn.getBoundingClientRect();
   const cover = document.createElement('div');
   cover.className = 'expander';
-  cover.style.background = getComputedStyle(btn).backgroundColor;
+  const colors = getComputedStyle(btn);
+  cover.style.background = colors.backgroundColor;
+  cover.style.color = colors.color;
   cover.innerHTML = `<span>${(btn.querySelector('.mode-label') || btn).textContent.trim()}</span>`;
   document.body.appendChild(cover);
   Sound.whoosh();

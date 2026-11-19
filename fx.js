@@ -507,6 +507,21 @@
       const col = ELEMENTS[el].c[1] === WHITE ? ELEMENTS[el].c[0] : ELEMENTS[el].c[0];
       if (opts.area && opts.area.length) P.frame(e, areaRect(t, x, y, opts.area), col, dur);
       const [px, py] = t.map(x, y);
+      if (ability === 'sniper' && opts.target) {
+        const [tx, ty] = t.map(...opts.target);
+        e.add(dur, (c, k) => {
+          const r = t.cell * (0.8 - k * 0.3);
+          c.strokeStyle = '#b82e24';
+          c.lineWidth = Math.max(1.5, t.cell * 0.045);
+          c.beginPath(); c.arc(tx, ty, r, 0, Math.PI * 2); c.stroke();
+          c.beginPath();
+          for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            c.moveTo(tx + r * dx * 0.72, ty + r * dy * 0.72);
+            c.lineTo(tx + r * dx * 1.2, ty + r * dy * 1.2);
+          }
+          c.stroke();
+        });
+      }
       e.add(dur, (c, k) => {
         const q = (k * dur * 3.2) % 1;
         c.strokeStyle = col; c.globalAlpha = 1 - q; c.lineWidth = 2;
@@ -551,6 +566,14 @@
           IMPACT.fire(e, px, py, s, { pw: 1 });
           if (t.shakeEl) FX.shake(t.shakeEl, 1.1);
         } else if (f.kind === 'gone') {
+          if (f.by === 'sniper' && o.origin) {
+            e.add(0.2, (c, k) => {
+              c.globalAlpha = (1 - k) * 0.85;
+              c.strokeStyle = WHITE;
+              c.lineWidth = s * 0.065;
+              c.beginPath(); c.moveTo(ox, oy); c.lineTo(px, py); c.stroke();
+            });
+          }
           const ux = px - ox, uy = py - oy, d = Math.hypot(ux, uy) || 1;
           P.shards(e, px, py, s, f.color || 'b', { ux: o.origin ? ux / d : 0, uy: o.origin ? uy / d : -1 });
           if (f.by === 'go') { P.ring(e, px, py, s, { col: ELEMENTS.earth.c[1], wid: 0.14, far: 0.4, near: 1.2, inward: true, split: 4, dur: 0.4 }); P.rocks(e, px, py, s, ELEMENTS.earth.c, { n: 4 }); }
@@ -570,6 +593,8 @@
           else if (o.ability && ELEMENT_OF[o.ability] === 'water') IMPACT.water(e, px, py, s * 0.8);
           else if (o.ability === 'wall') P.rocks(e, px, py, s, ELEMENTS.earth.c, { n: 4 });
           else P.ring(e, px, py, s, { col: INK, wid: 0.06, far: 0.8, near: 0.4, dur: 0.3, split: 0 });
+        } else if (f.kind === 'moved' && o.ability === 'warp') {
+          P.ring(e, px, py, s, { col: ELEMENTS.vortex.c[2], wid: 0.1, near: 0.32, far: 0.8, delay: 0.16, dur: 0.38 });
         } else if (f.kind === 'moved' && board) {
           const p = board[f.y][f.x];
           if (p && (p.ability === 'gravity' || p.ability === 'antigravity')) IMPACT.gravity(e, px, py, s, { dir: p.ability === 'gravity' ? 1 : -1 });
@@ -621,6 +646,9 @@
   const DEMOS = {
     push: { pre: [[1, 0, 'w'], [-1, -1, 'b'], [0, 1, 'w'], [-1, 1, 'w']], at: [0, 0] },
     suck: { pre: [[2, 0, 'w'], [-2, -2, 'b'], [0, 2, 'w'], [-2, 2, 'w']], at: [0, 0] },
+    timeBomb: { pre: [[1, 0, 'w'], [0, -1, 'b']], at: [0, 0], follow: [[2, -2, 'w'], [-2, 2, 'b']] },
+    warp: { pre: [[-2, -1, 'w'], [-1, -2, 'b'], [0, 0, 'w'], [2, 1, 'w']], at: [-1, -1] },
+    sniper: { pre: [[2, -1, 'w'], [1, 1, 'w'], [-1, 0, 'b']], at: [-1, 1], target: [2, -1] },
     bomb: { pre: [[1, 0, 'w'], [-1, 0, 'w'], [0, -1, 'b'], [1, 1, 'w'], [-2, 2, 'w']], at: [0, 0] },
     nuke: { pre: [[1, 0, 'w'], [-1, 1, 'w'], [0, -1, 'b'], [2, 2, 'w'], [-2, -2, 'w'], [2, -1, 'b'], [-2, 1, 'w'], [1, 2, 'b'], [-1, -2, 'w']], at: [0, 0] },
     rowBomb: { pre: [[-2, 0, 'w'], [-1, 0, 'w'], [1, 0, 'b'], [2, 0, 'w'], [0, -1, 'w'], [0, 1, 'b']], at: [0, 0] },
@@ -693,7 +721,7 @@
 
   async function loop(root, ability, token) {
     const demo = DEMOS[ability];
-    const fakeState = { moveCount: 0, players: { b: { hand: [] }, w: { hand: [{ ability: 'push' }] } } };
+    const fakeState = { moveCount: 0, target: demo.target?.map((n) => C + n), players: { b: { hand: [] }, w: { hand: [{ ability: 'push' }] } } };
     while (!token.stop) {
       const board = newBoard();
       for (const [dx, dy, c, ab, age] of demo.pre) board[C + dy][C + dx] = newPiece(c, ab || 'plain', fakeState, age ? { age } : {});
@@ -708,7 +736,7 @@
       // 予兆：置いただけの盤を見せ、石をためる
       if (showAb && RECIPE[showAb]) {
         drawMini(root, res.before, [{ kind: 'placed', x: ax, y: ay }], [], [ax, ay]);
-        FX.anticipate(t, showAb, ax, ay, { area });
+        FX.anticipate(t, showAb, ax, ay, { area, target: fakeState.target });
         await wait(FX.anticipationOf(showAb) * 1000, token);
       }
       for (let i = 0; i < res.steps.length; i++) {
@@ -719,11 +747,18 @@
         else FX.after(t, res.steps[i].fx, res.steps[i].board);
         await wait(i === res.steps.length - 1 ? 250 : 420, token);
       }
-      if (demo.then) {
-        await wait(200, token);
-        const tx = C + demo.then[0], ty = C + demo.then[1];
-        const r2 = resolvePlacement(board, tx, ty, 'b', 'plain', fakeState);
-        drawMini(root, r2.steps[0].board, r2.steps[0].fx);
+      const follow = demo.follow || (demo.then ? [[...demo.then, 'b']] : []);
+      for (const [dx, dy, color] of follow) {
+        await wait(demo.follow ? 650 : 200, token);
+        const tx = C + dx, ty = C + dy;
+        const next = resolvePlacement(board, tx, ty, color, 'plain', fakeState);
+        drawMini(root, next.steps[0].board, next.steps[0].fx);
+        for (const step of next.steps.slice(1)) {
+          await wait(250, token);
+          drawMini(root, step.board, step.fx);
+          FX.after(t, step.fx, step.board);
+        }
+        if (next.steps.length === 1 && demo.follow) drawMini(root, board, next.steps[0].fx);
       }
       const win = findWin(board, 'b') || findWin(board, 'w') || specialWin(board, 'b');
       if (win) { drawMini(root, board, [], win); IMPACT.light(engine(t.canvas), ...t.map(ax, ay), t.cell * 0.8); }

@@ -137,7 +137,7 @@
   const toBlob = (cv) => new Promise((r) => cv.toBlob(r, 'image/png'));
   const center = (c, text, x, y) => { c.textAlign = 'center'; c.fillText(text, x, y); c.textAlign = 'left'; };
   // 盤を描く（揃った列は黄色、最後の手は赤い輪）
-  async function drawBoard(c, bx, by, bs, { pad = bs * 0.035, frame = true } = {}) {
+  async function drawBoard(c, bx, by, bs, { pad = bs * 0.035, frame = true, position = state } = {}) {
     const cell = (bs - pad * 2) / (SIZE - 1);
     if (frame) { c.fillStyle = C.board; roundRect(c, bx, by, bs, bs, bs * 0.025); c.fill(); }
     c.strokeStyle = C.line; c.lineWidth = Math.max(1.5, bs / 450);
@@ -147,16 +147,16 @@
     }
     c.fillStyle = C.line;
     for (const [sx, sy] of [[5, 5], [2, 2], [8, 2], [2, 8], [8, 8]]) { c.beginPath(); c.arc(bx + pad + sx * cell, by + pad + sy * cell, cell * 0.08, 0, Math.PI * 2); c.fill(); }
-    const win = new Set((state.winLine || []).map(([x, y]) => `${x},${y}`));
+    const win = new Set((position.winLine || []).map(([x, y]) => `${x},${y}`));
     for (let y = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++) {
-      const p = state.board[y][x];
+      const p = position.board[y][x];
       if (!p) continue;
       const px = bx + pad + x * cell, py = by + pad + y * cell;
       if (win.has(`${x},${y}`)) { c.fillStyle = C.win; c.beginPath(); c.arc(px, py, cell * 0.52, 0, Math.PI * 2); c.fill(); }
       await stone(c, px, py, cell * 0.41, p);
     }
-    if (state.lastMove) {
-      const [lx, ly] = state.lastMove;
+    if (position.lastMove) {
+      const [lx, ly] = position.lastMove;
       c.strokeStyle = C.accent; c.lineWidth = cell * 0.08;
       c.beginPath(); c.arc(bx + pad + lx * cell, by + pad + ly * cell, cell * 0.5, 0, Math.PI * 2); c.stroke();
     }
@@ -330,21 +330,28 @@
   }
 
   // B4：横長（1200×675、X のタイムラインでそのまま見える形）。左に盤、右に結果
-  async function landscape() {
+  async function landscape(inPlay = false) {
+    const position = { board: snapshot(state.board), winLine: state.winLine, lastMove: state.lastMove };
+    const players = ['b', 'w'].map(playerInfo);
+    const used = usedList();
+    const moves = state.moveCount;
+    const winner = inPlay ? null : state.winner;
+    const title = inPlay ? '対局中' : state.resultText || $('result-text')?.textContent || '';
+    const note = inPlay ? '' : state.resultNote;
     await fonts();
     const LW = 1200, LH = 675;
     const [cv, c] = canvas(LW, LH);
-    const bs = 595; await drawBoard(c, 40, 40, bs);
+    const bs = 595; await drawBoard(c, 40, 40, bs, { position });
     const cx = 40 + bs + (LW - 40 - bs) / 2;
-    const used = usedList(), times = used.reduce((n, [, k]) => n + k, 0);
+    const times = used.reduce((n, [, k]) => n + k, 0);
     c.fillStyle = C.muted; c.font = `28px ${DISPLAY}`; center(c, '超能力五目並べ', cx, 110);
-    c.fillStyle = state.winner ? C.accent : C.ink; c.font = `64px ${DISPLAY}`; center(c, fitText(c, state.resultText || '', LW - bs - 120), cx, 196);
-    c.fillStyle = C.muted; c.font = `700 24px ${BODY}`; center(c, fitText(c, state.resultNote ? `${state.resultNote}　${state.moveCount}手・超能力${times}回` : `${state.moveCount}手・超能力${times}回`, LW - bs - 100), cx, 242);
+    c.fillStyle = winner ? C.accent : C.ink; c.font = `64px ${DISPLAY}`; center(c, fitText(c, title, LW - bs - 120), cx, 196);
+    c.fillStyle = C.muted; c.font = `700 24px ${BODY}`; center(c, fitText(c, note ? `${note}　${moves}手・超能力${times}回` : `${moves}手・超能力${times}回`, LW - bs - 100), cx, 242);
     // 2人を縦に
     for (const [i, col] of ['b', 'w'].entries()) {
-      const p = playerInfo(col), y = 330 + i * 70;
+      const p = players[i], y = 330 + i * 70;
       await smallStone(c, cx - 170, y - 10, 18, col);
-      c.fillStyle = state.winner === col ? C.accent : C.ink; c.font = `700 30px ${BODY}`; c.fillText(fitText(c, p.name, 300), cx - 140, y);
+      c.fillStyle = winner === col ? C.accent : C.ink; c.font = `700 30px ${BODY}`; c.fillText(fitText(c, p.name, 300), cx - 140, y);
       c.fillStyle = C.muted; c.font = `700 20px ${BODY}`; c.fillText(fitText(c, p.deck, 300), cx - 140, y + 28);
     }
     const top = used.slice(0, 4), r = 22, item = r * 2 + 54;
@@ -356,41 +363,69 @@
 
   const LAYOUTS = { classic: makeImage, poster, versus, journey, posterBig, posterBleed, posterTall, landscape };
 
-  let blob = null, url = null;
+  let file = null, url = null, request = null;
+  function clearShare() {
+    request = null;
+    file = null;
+    if (url) URL.revokeObjectURL(url);
+    url = null;
+    $('share-img').removeAttribute('src');
+  }
+
   async function openShare() {
-    $('share-btn').disabled = true;
+    const dialog = $('share-dialog');
+    if (dialog.open) return;
+    clearShare();
+    const current = {};
+    request = current;
+    $('share-img').hidden = $('share-save').hidden = $('share-go').hidden = true;
+    $('share-status').textContent = '盤面の画像を作成中…';
+    dialog.showModal();
     try {
-      blob = await landscape(); // 横長（X のタイムラインで切れずに見える）
-      if (url) URL.revokeObjectURL(url);
-      url = URL.createObjectURL(blob);
+      const blob = await landscape(state.phase === 'play');
+      if (request !== current || !dialog.open) return;
+      if (!blob) throw new Error('画像を作成できませんでした');
+      file = new File([blob], 'special-gomoku.png', { type: 'image/png' });
+      url = URL.createObjectURL(file);
       $('share-img').src = url;
-      // 端末の「共有」が画像を受け取れるときだけ、共有のボタンを出す
-      const file = new File([blob], 'special-gomoku.png', { type: 'image/png' });
-      $('share-go').hidden = !(navigator.canShare && navigator.canShare({ files: [file] }));
-      $('result-dialog').close();
-      $('share-dialog').showModal();
-    } finally {
-      $('share-btn').disabled = false;
+      $('share-img').hidden = $('share-save').hidden = false;
+      $('share-go').hidden = !(typeof navigator.share === 'function' && navigator.canShare?.({ files: [file] }));
+      $('share-status').textContent = $('share-go').hidden
+        ? '画像を保存して、Xの投稿やLINEのトークに添付できます。'
+        : '共有先からXやLINEを選べます。表示されない場合は画像を保存して添付してください。';
+    } catch {
+      if (request === current && dialog.open) $('share-status').textContent = '盤面の画像を作成できませんでした。';
     }
   }
+
   function save() {
     if (!url) return;
     const a = document.createElement('a');
     a.href = url; a.download = `special-gomoku-${Date.now()}.png`;
     document.body.appendChild(a); a.click(); a.remove();
   }
+
   async function share() {
-    if (!blob) return;
-    const file = new File([blob], 'special-gomoku.png', { type: 'image/png' });
-    const text = `${state.resultText}（${state.moveCount}手）#超能力五目並べ`;
-    try { await navigator.share({ files: [file], text, url: `https://${URL_TEXT}/` }); } catch (e) { /* やめたときは何もしない */ }
+    if (!file) return;
+    const current = request;
+    try {
+      await navigator.share({ files: [file] });
+    } catch (error) {
+      if (error.name !== 'AbortError' && request === current) {
+        $('share-status').textContent = '共有できませんでした。画像を保存して、XやLINEに添付してください。';
+      }
+    }
   }
 
   function init() {
     if (!$('share-btn')) return;
     $('share-btn').addEventListener('click', openShare);
+    $('share-board-btn').addEventListener('click', openShare);
     $('share-save').addEventListener('click', save);
     $('share-go').addEventListener('click', share);
+    $('share-dialog').addEventListener('close', (event) => {
+      if (!event.currentTarget.open) clearShare();
+    });
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
   window.ShareImage = { make: (layout = 'classic') => (LAYOUTS[layout] || makeImage)(), layouts: Object.keys(LAYOUTS) };
