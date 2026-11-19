@@ -75,13 +75,20 @@
 
   // ===== 状態の保存と復元（手を試すため） =====
   const KEYS = ['board', 'players', 'turn', 'selected', 'sealed', 'jammed', 'moveCount', 'phase', 'winner', 'winLine', 'lastMove'];
-  function save() {
-    const s = {};
-    for (const k of KEYS) s[k] = G.state[k];
-    return structuredClone(s);
+  // 状態のコピー。structuredClone より速いように、形の分かっているものだけを手で写す
+  const copyPlayer = (p) => ({ ...p, bag: p.bag.map((c) => ({ ...c })), hand: p.hand.map((c) => ({ ...c })) });
+  function clone(s) {
+    const o = {};
+    for (const k of KEYS) o[k] = s[k];
+    o.board = s.board.map((row) => row.map((c) => c && { ...c }));
+    o.players = { b: copyPlayer(s.players.b), w: copyPlayer(s.players.w) };
+    o.winLine = s.winLine && s.winLine.map((q) => q.slice());
+    o.lastMove = s.lastMove && s.lastMove.slice();
+    return o;
   }
+  function save() { return clone(G.state); }
   function restore(s) {
-    Object.assign(G.state, structuredClone(s));
+    Object.assign(G.state, clone(s));
     G.state.logs = [];
     G.state.fx = [];
   }

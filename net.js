@@ -5,25 +5,29 @@
 //   Net.leave() … やめる（ロビーと対戦の部屋から抜ける）
 // 相手さがし：ロビーにいる人を ID の順に並べ、自分より ID が大きい空いている人だけを誘う（同時に誘い合わない）。
 // 誘いを受けた人は、誰も誘っていなければ受ける。決まったら、2人だけの部屋に移る。
-// 直接つながらない回線（全体の2割くらい）のために、TURN サーバー（Metered の無料プラン）を保険に使う。
+// 直接つながらない回線のために、TURN サーバー（Cloudflare）を使う。鍵は turn-worker/ の Worker が配る。
 // 通信のつなぎ方を Firebase などに替えるときは、このファイルだけを書き換える。
 (function () {
   const APP_ID = 'special-gomoku-v1';
   const TRYSTERO_URL = 'https://cdn.jsdelivr.net/npm/trystero@0.21.6/+esm';
-  // STUN は2つだけ（5つ以上あると、つなぎ先さがしが遅くなる）
-  const STUN = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] }];
-  // TURN（直接つながらない回線のための中継）。Metered の無料プランの鍵を入れると使う。
-  // 鍵が空なら STUN だけ（同じ回線どうしや、ふつうの家庭の回線ならつながる）
-  const METERED_APP = '';     // 例：'special-gomoku'（https://special-gomoku.metered.live）
-  const METERED_KEY = '';     // Metered の画面の「API Key」
+  // STUN は使わない。UDP の STUN や TURN は、使えない回線（VPN や別の LAN）があると、つなぎ先を「集め終わる」までに
+  // 15秒以上かかり、Trystero はその間ずっと待ってしまう（Mac と mameta で確かめた）。TCP の TURN だけなら0.1〜0.5秒で集め終わる
+  const STUN = [];
+  // TURN（直接つながらない回線のための中継）。鍵は Worker（turn-worker/）からもらう（Worker が Metered に取りに行く）。
+  // 同じ LAN でも、ブラウザがローカルのアドレスを隠すので、直接はつながらないことが多い。TURN は必須
+  const TURN_ENDPOINT = 'https://special-gomoku-turn.uemnan.workers.dev/ice';
   let iceServers = STUN;
   async function loadIce() {
-    if (!METERED_APP || !METERED_KEY || iceServers !== STUN) return;
+    if (!TURN_ENDPOINT || iceServers !== STUN) return;
     try {
-      const r = await fetch(`https://${METERED_APP}.metered.live/api/v1/turn/credentials?apiKey=${METERED_KEY}`);
-      const turn = await r.json();
-      if (Array.isArray(turn) && turn.length) iceServers = STUN.concat(turn.filter((t) => String(t.urls).startsWith('turn')).slice(0, 2));
-    } catch (e) { /* 取れなければ STUN だけで続ける */ }
+      const r = await fetch(TURN_ENDPOINT);
+      const { iceServers: turn } = await r.json();
+      // TURN は TCP の2つだけ：80番の TCP と、443番の TLS（会社や学校の回線でも通りやすい）。UDP は上の理由で使わない
+      const relay = (turn || []).map((s) => ({ ...s, urls: [].concat(s.urls).filter((u) => u.startsWith('turn')) })).filter((s) => s.urls.length);
+      const pickOne = (re) => relay.find((s) => s.urls.some((u) => re.test(u)));
+      const chosen = [pickOne(/^turn:.*transport=tcp/), pickOne(/^turns:/)].filter(Boolean);
+      if (chosen.length) iceServers = STUN.concat(chosen);
+    } catch (e) { /* 取れなければ、同じ機械の中どうしだけつながる */ }
   }
   const config = () => ({ appId: APP_ID, rtcConfig: { iceServers } });
   const MATCH_TIMEOUT_MS = 15000; // 部屋を移ってから相手が来るまで待つ時間

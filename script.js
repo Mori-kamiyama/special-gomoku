@@ -385,20 +385,23 @@ function growth(board, color, st) {
 const countsFor = (cell, c) => !!cell && (cell.color === c || cell.ability === 'joker');
 
 // 色 c で揃っている列を探す。見つかればマスの座標配列、なければ null
+// 速さのため：配列を作らずに数えて、5つ以上で自分の色（ジョーカーだけでない）を含むときだけ座標を返す
 function findWin(board, c) {
   for (const [dx, dy] of LINE_DIRS) {
     for (let y = 0; y < SIZE; y++) {
       for (let x = 0; x < SIZE; x++) {
-        if (!countsFor(board[y][x], c)) continue;
+        const cell = board[y][x];
+        if (!cell || (cell.color !== c && cell.ability !== 'joker')) continue;
         const px = x - dx, py = y - dy;
-        if (inside(px, py) && countsFor(board[py][px], c)) continue; // 列の先頭だけ見る
-        const cells = [];
-        let cx = x, cy = y;
-        while (inside(cx, cy) && countsFor(board[cy][cx], c)) {
-          cells.push([cx, cy]);
-          cx += dx; cy += dy;
+        if (px >= 0 && px < SIZE && py >= 0 && py < SIZE) { const pc = board[py][px]; if (pc && (pc.color === c || pc.ability === 'joker')) continue; } // 列の先頭だけ見る
+        let n = 0, own = false, cx = x, cy = y;
+        while (cx >= 0 && cx < SIZE && cy >= 0 && cy < SIZE) {
+          const q = board[cy][cx];
+          if (!q || (q.color !== c && q.ability !== 'joker')) break;
+          if (q.color === c) own = true;
+          n++; cx += dx; cy += dy;
         }
-        if (countLine(cells.map(([qx, qy]) => board[qy][qx]), c)) return cells;
+        if (n >= 5 && own) return Array.from({ length: n }, (_, k) => [x + dx * k, y + dy * k]);
       }
     }
   }
@@ -544,14 +547,17 @@ function canPlaceAt(x, y, color, ability) {
   return !!ABILITIES[ability].onEnemy && cell.color === other(color) && !isShielded(cell);
 }
 
-// リーチ：空きマスのどこかに c の石を1つ置けば、c の列が揃う
+// リーチ：空きマスのどこかに c の石を1つ置けば、c の列が揃う（そのマスを通る4本の線だけを数える）
 function hasReach(board, c) {
+  const ok = (x, y) => x >= 0 && x < SIZE && y >= 0 && y < SIZE && board[y][x] && (board[y][x].color === c || board[y][x].ability === 'joker');
   for (let y = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++) {
     if (board[y][x]) continue;
-    board[y][x] = { color: c, ability: 'plain' };
-    const win = findWin(board, c);
-    board[y][x] = null;
-    if (win) return true;
+    for (const [dx, dy] of LINE_DIRS) {
+      let n = 1;
+      for (let k = 1; ok(x + dx * k, y + dy * k); k++) n++;
+      for (let k = 1; ok(x - dx * k, y - dy * k); k++) n++;
+      if (n >= 5) return true; // 置く石が c なので、自分の色は必ず入る
+    }
   }
   return false;
 }

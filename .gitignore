@@ -2,3 +2,5 @@
 .DS_Store
 tools/codex-run.log
 tools/codex-last-message.md
+.wrangler/
+node_modules/
