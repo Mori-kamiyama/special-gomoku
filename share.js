@@ -363,13 +363,11 @@
     const button = $('share-go');
     const composer = $('share-x');
     button.hidden = mode === 'paste';
-    composer.hidden = mode !== 'paste' && mode !== 'native';
-    composer.classList.toggle('btn-primary', mode === 'paste');
-    composer.classList.toggle('btn-text', mode !== 'paste');
+    composer.hidden = mode !== 'paste';
     let hint;
     if (mode === 'native') {
-      button.textContent = '端末で共有';
-      hint = '共有メニューにXが表示されたら、選んで画像を添付できます。';
+      button.textContent = '端末で画像を共有';
+      hint = '端末の共有メニューでXを選んでください。';
     } else if (mode === 'copy') {
       button.textContent = 'Xに投稿する画像をコピー';
       hint = 'コピーした画像を、Xの投稿欄に貼り付けられます。';
@@ -404,16 +402,17 @@
       const image = { files: [file] };
       const text = `${state.resultText}（${state.moveCount}手） #超能力五目並べ`;
       const gameUrl = `https://${URL_TEXT}/`;
+      const touch = matchMedia('(pointer: coarse)').matches;
       const post = { ...image, text, url: gameUrl };
       let native = null;
       if (navigator.share && navigator.canShare?.(image)) {
-        native = navigator.canShare(post) ? post : image;
+        // スマホでは受け取り先が投稿文やURLを優先しないよう、PNGだけを渡す。
+        native = !touch && navigator.canShare(post) ? post : image;
       }
       const intent = new URL('https://twitter.com/intent/tweet');
       intent.searchParams.set('text', text);
       intent.searchParams.set('url', gameUrl);
       $('share-x').href = intent.href;
-      const touch = matchMedia('(pointer: coarse)').matches;
       const canCopy = !touch && !!(navigator.clipboard?.write && window.ClipboardItem &&
         (ClipboardItem.supports?.('image/png') ?? true));
       shareData = { file, native, canCopy };
