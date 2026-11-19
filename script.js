@@ -1107,6 +1107,7 @@ function deckIcons(deck, color, max) {
 // ===== デッキをえらぶ =====
 // CPU と2人対戦では、黒と白のデッキをそれぞれ選ぶ
 function startSelect(mode = state.mode) {
+  if (state.phase === 'online') Net.leave();
   for (const d of document.querySelectorAll('dialog[open]')) d.close();
   state.mode = mode;
   state.phase = 'select';
@@ -1221,6 +1222,7 @@ function confirmSelect() {
   }
   state.myDeck = mine.deck;
   state.myDeckName = mine.name;
+  state.onlineWord = $('my-word').value.trim();
   startOnline();
 }
 
@@ -1800,8 +1802,8 @@ function renderStatus() {
   const status = $('game-status');
   if (state.phase === 'end') {
     status.innerHTML = `<span class="status-text">${state.winner ? `${escapeHTML(playerName(state.winner))}の勝ち` : '引き分け'}</span>`
-      + '<button type="button" class="btn-primary btn-small" id="again-inline">もう一局</button>';
-    $('again-inline').addEventListener('click', () => (state.mode === 'online' ? backToTitle(true) : startGame()));
+      + `<button type="button" class="btn-primary btn-small" id="again-inline"${state.busy ? ' disabled' : ''}>もう一局</button>`;
+    $('again-inline').addEventListener('click', playAgain);
   } else {
     const choose = !selectedCard() && !notMine(state.turn);
     const hint = state.chainTurn === state.turn ? 'ただの石だけ置ける' : choose ? '手札から碁石を選ぶ' : '';
@@ -1948,7 +1950,7 @@ async function place(x, y, remote = false, target = null) {
   renderGame();
   if (state.phase === 'end') {
     state.queued = null;
-    if (state.mode === 'online') Net.finish();
+    if (state.mode === 'online') state.onlineFinish = Net.finish();
     showResult(color);
     return;
   }
@@ -2049,22 +2051,39 @@ function renderRules() {
   }).join('');
 }
 
+function playAgain() {
+  if (state.phase !== 'end' || state.busy) return;
+  if (state.mode === 'online') startOnline();
+  else startGame();
+}
+
 // ===== オンライン対戦：相手をさがして、始める =====
 // 知らない人と当たる。ロビーで相手が見つかったら、ホスト（誘った側）が種と色を決めて送る
 async function startOnline() {
+  const search = {};
+  state.onlineSearch = search;
+  const current = () => state.phase === 'online' && state.onlineSearch === search;
+  for (const d of document.querySelectorAll('dialog[open]')) d.close();
   state.phase = 'online';
   state.mode = 'online';
+  state.remoteQueue = [];
+  state.logs = [];
   showScreen('online');
-  $('online-title').textContent = '対戦相手をさがしています';
+  const word = state.onlineWord || '';
+  $('online-title').textContent = word ? `あいことば「${word}」で待っています` : '対戦相手をさがしています';
   $('online-sub').textContent = 'つないでいます…';
   try {
-    const word = ($('my-word').value || '').trim();
-    if (word) $('online-title').textContent = `あいことば「${word}」で待っています`;
+    // 勝敗を見た側が先に押しても、相手に最終手が届くまでは前の接続を残す。
+    const previous = state.onlineFinish;
+    state.onlineFinish = null;
+    if (previous) await previous;
+    if (!current()) return;
     const { isHost } = await Net.find((n) => {
+      if (!current()) return;
       $('online-sub').textContent = word ? (n > 0 ? '相手が来ました。つないでいます…' : '同じあいことばの相手を待っています')
         : n > 0 ? `いま、ほかに ${n}人がさがしています` : 'ほかにさがしている人を待っています';
     }, word, RULES_VERSION);
-    if (state.phase !== 'online') return; // やめるが押された
+    if (!current()) return;
     $('online-title').textContent = '見つかりました！';
     $('online-sub').textContent = '';
     if (isHost) {
@@ -2072,30 +2091,30 @@ async function startOnline() {
       const myColor = Math.random() < 0.5 ? 'b' : 'w';
       Net.send('start', { seed, guestColor: other(myColor) });
       Net.send('deck', { deck: state.myDeck, name: state.myDeckName, player: state.myName });
-      beginOnline(seed, myColor);
+      beginOnline(seed, myColor, current);
     } else {
       Net.send('deck', { deck: state.myDeck, name: state.myDeckName, player: state.myName });
-      Net.once('start', (d) => beginOnline(d.seed, d.guestColor));
+      Net.once('start', (d) => beginOnline(d.seed, d.guestColor, current));
     }
   } catch (err) {
-    if (err.name === 'AbortError' || state.phase !== 'online') return;
+    if (err.name === 'AbortError' || !current()) return;
     $('online-title').textContent = 'つながりませんでした';
-    $('online-sub').textContent = 'もう一度、タイトルからためしてください';
+    $('online-sub').textContent = 'もう一度、デッキ選択からためしてください';
   }
 }
 
 // 相手のデッキが届いたら始める（両方の画面で、同じ種から同じ袋を作る）
-function beginOnline(seed, myColor) {
-  if (state.phase !== 'online') return;
+function beginOnline(seed, myColor, current) {
+  if (!current()) return;
   state.myColor = myColor;
   Net.once('deck', (d) => {
-    if (state.phase !== 'online') return;
+    if (!current()) return;
     state.mode = 'online';
     state.decks = { [myColor]: state.myDeck, [other(myColor)]: sanitizeDeck(d.deck) };
     state.deckNames = { [myColor]: state.myDeckName, [other(myColor)]: cleanName(d.name) || '相手のデッキ' };
     state.opponentName = cleanName(d.player) || NO_NAME;
     $('online-sub').textContent = `相手：${state.opponentName}`;
-    setTimeout(() => startGame(seed), 900);
+    setTimeout(() => { if (current()) startGame(seed); }, 900);
   });
 }
 
@@ -2243,17 +2262,18 @@ function init() {
   });
   $('deck-name').addEventListener('input', () => { state.build.dirty = true; });
   $('deck-starters').addEventListener('click', (e) => { const b = e.target.closest('.starter'); if (b) loadTemplate(b.dataset.id); });
-  $('online-cancel').addEventListener('click', () => { Net.leave(); startSelect('online'); });
+  $('online-cancel').addEventListener('click', () => startSelect('online'));
   Net.on('move', (d) => onRemote('move', d));
   Net.onLeave(() => {
     if (state.mode !== 'online' || state.phase !== 'play') return;
     state.phase = 'end';
     state.busy = false;
+    renderStatus();
     $('result-text').textContent = '接続が切れました';
     $('result-sub').textContent = '相手との接続が切れました';
     $('result-dialog').showModal();
   });
-  $('again-btn').addEventListener('click', () => (state.mode === 'online' ? backToTitle(true) : startGame()));
+  $('again-btn').addEventListener('click', playAgain);
   renderTitleArt();
   $('look-btn').addEventListener('click', () => $('result-dialog').close());
   $('deck-again').addEventListener('click', () => startSelect(state.mode));

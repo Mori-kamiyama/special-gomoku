@@ -2,7 +2,7 @@
 //   Net.find(onCount, word, rulesVersion) … 知らない人と当たる。見つかったら { isHost } を返す（誘った側がホスト）
 //   Net.send(type, data) / Net.on(type, fn) / Net.once(type, fn) … 相手との手のやり取り
 //   Net.onLeave(fn) … 相手との接続が切れたとき
-//   Net.finish() … 対局が終わったら、相手側の結果が確定するのを待って切断する
+//   Net.finish() … 対局が終わったら、相手側の結果を待って切断し、完了を返す
 //   Net.leave() … やめる（ロビーと対戦の部屋から抜ける）
 // 相手さがし：ロビーにいる人を ID の順に並べ、自分より ID が大きい空いている人だけを誘う（同時に誘い合わない）。
 // 誘いを受けた人は、誰も誘っていなければ受ける。決まったら、2人だけの部屋に移る。
@@ -40,9 +40,12 @@
   let lib = null;
   let lobby = null, match = null, timer = null;
   let matchTimer = null, finishTimer = null;
+  let finishPromise = null, resolveFinish = null;
+  let closingRooms = Promise.resolve();
   let searchId = 0;
   let sendMsg = null;
   const handlers = {};   // type → [fn]
+  const onceHandlers = new Set();
   const pending = {};    // 受け取る人がまだいない手（type → [data]）
   let leaveFn = null;
   let partner = null;
@@ -65,6 +68,15 @@
     return (h >>> 0).toString(36);
   }
 
+  function closeRooms(rooms) {
+    const releases = [closingRooms];
+    for (const room of rooms) {
+      try { if (room) releases.push(room.leave()); } catch (e) { /* すでに抜けている */ }
+    }
+    closingRooms = Promise.allSettled(releases).then(() => {});
+    return closingRooms;
+  }
+
   function cleanup() {
     searchId++;
     clearInterval(timer); timer = null;
@@ -72,19 +84,25 @@
     clearTimeout(finishTimer); finishTimer = null;
     const rooms = [lobby, match];
     lobby = null; match = null; sendMsg = null; partner = null;
-    for (const room of rooms) {
-      try { room?.leave(); } catch (e) { /* すでに抜けている */ }
-    }
+    const closed = closeRooms(rooms);
     for (const k of Object.keys(pending)) delete pending[k];
+    for (const type of Object.keys(handlers)) handlers[type] = handlers[type].filter((fn) => !onceHandlers.has(fn));
+    onceHandlers.clear();
+    const finished = resolveFinish;
+    resolveFinish = null;
+    finishPromise = null;
+    if (finished) closed.then(finished);
+    return closed;
   }
 
   const Net = {
     // word（あいことば）を渡すと、同じあいことばの人だけが集まる部屋で相手をさがす（あいことばで中身も暗号にする）
     async find(onCount = () => {}, word = '', rulesVersion = 1) {
-      cleanup();
+      const closed = cleanup();
       const id = searchId;
       const { joinRoom, selfId } = await load();
       if (searchId === id) await loadIce();
+      await closed;
       if (searchId !== id) throw new DOMException('相手さがしを中止しました', 'AbortError');
       const roomConfig = config(rulesVersion);
       lobby = word ? joinRoom({ ...roomConfig, password: word }, `room-${hash(word)}`) : joinRoom(roomConfig, 'lobby');
@@ -131,7 +149,11 @@
           sendBusy({});
           partner = other;
           const roomId = isHost ? `m-${selfId}-${other}` : `m-${other}-${selfId}`;
-          setTimeout(() => { try { myLobby.leave(); } catch (e) { /* すでに抜けている */ } if (lobby === myLobby) lobby = null; }, 800);
+          setTimeout(() => {
+            if (lobby !== myLobby) return;
+            lobby = null;
+            closeRooms([myLobby]);
+          }, 800);
           const myMatch = match = joinRoom(roomConfig, roomId);
           const [send, get] = myMatch.makeAction('msg');
           sendMsg = send;
@@ -172,15 +194,23 @@
       if (waiting) { delete pending[type]; waiting.forEach((d) => fn(d)); }
     },
     once(type, fn) {
-      const wrap = (d) => { handlers[type] = handlers[type].filter((f) => f !== wrap); fn(d); };
+      const wrap = (d) => {
+        if (!onceHandlers.delete(wrap)) return;
+        handlers[type] = handlers[type].filter((f) => f !== wrap);
+        fn(d);
+      };
+      onceHandlers.add(wrap);
       Net.on(type, wrap);
     },
     onLeave(fn) { leaveFn = fn; },
     finish() {
-      if (!sendMsg || !partner || finishTimer !== null) return;
+      if (finishPromise) return finishPromise;
+      if (!sendMsg || !partner) return Promise.resolve();
       // 最後の手と同じ順序付きチャンネルで送り、双方が結果を表示できるまで待つ。
+      const finished = finishPromise = new Promise((resolve) => { resolveFinish = resolve; });
       finishTimer = setTimeout(cleanup, FINISH_TIMEOUT_MS);
       sendMsg({ t: 'finish', d: null }, partner).catch(() => {});
+      return finished;
     },
     leave() { cleanup(); },
   };
