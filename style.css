@@ -901,15 +901,14 @@ body[data-screen="title"] main { padding-bottom: 0; }
   padding: 10px 4px 8px;
   border-radius: 12px;
   background: color-mix(in srgb, var(--tier) 9%, var(--bg));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tier) 18%, transparent);
   cursor: pointer;
   user-select: none;
-  transition: transform 0.18s cubic-bezier(0.3, 1.6, 0.5, 1), background 0.15s, box-shadow 0.15s;
+  transition: transform 0.18s cubic-bezier(0.3, 1.6, 0.5, 1), background 0.15s;
 }
-.dk-tile:hover, .dk-tile.is-focus { transform: translateY(-3px); background: color-mix(in srgb, var(--tier) 18%, var(--bg)); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--tier) 36%, transparent); }
+.dk-tile:hover, .dk-tile.is-focus { transform: translateY(-3px); background: color-mix(in srgb, var(--tier) 18%, var(--bg)); }
 .dk-tile:active { transform: scale(0.94); transition-duration: 0.06s; }
 .dk-tile button:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
-.dk-tile.is-in { background: color-mix(in srgb, var(--tier) 22%, var(--bg)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tier) 28%, transparent); }
+.dk-tile.is-in { background: color-mix(in srgb, var(--tier) 22%, var(--bg)); }
 .dk-tile.is-off:not(.is-in) { opacity: 0.5; }
 .dk-tile.is-off:not(.is-in):hover { transform: none; }
 .dk-visual { position: relative; display: grid; place-items: center; width: 42px; }
@@ -1010,13 +1009,41 @@ body[data-screen="title"] main { padding-bottom: 0; }
 .deck-toast.is-show { animation: toast 1.4s ease; }
 @keyframes toast { 0% { opacity: 0; transform: translate(-50%, 8px); } 12%, 75% { opacity: 1; transform: translate(-50%, 0); } 100% { opacity: 0; } }
 
-/* スマホ：一覧の中でカードを開く */
+/* スマホ：一覧の下に、選んだ碁石の詳細を出す */
 @media (max-width: 899px) {
   .deck-catalog { grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); }
   .dk-visual { width: 34px; }
   .dk-name { font-size: 11.5px; }
   .deck-side { gap: 8px; }
-  .deck-info { display: none; }
+  .deck-info {
+    order: -1;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px 10px;
+    min-height: 0;
+    padding: 9px 12px;
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--text) 5%, var(--bg));
+  }
+  .deck-info:empty { display: none; }
+  .deck-info-title { display: flex; align-items: center; gap: 7px; font-size: 15px; }
+  .deck-info-title > .stone { width: 28px; flex: none; }
+  .deck-info-desc { grid-column: 1 / -1; grid-row: 2; margin: 0; font-size: 14px; line-height: 1.45; }
+  .deck-info-step { display: flex; align-items: center; gap: 5px; }
+  .deck-info-step button {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--text) 10%, var(--bg));
+    font-size: 19px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .deck-info-step button:last-child { background: var(--accent); color: #fff; }
+  .deck-info-step button:disabled { opacity: 0.42; cursor: default; }
+  .deck-info-step output { min-width: 2ch; text-align: center; font-weight: 700; }
   .deck-bag .stone { width: 20px; }
   .meter-bar i { height: 10px; }
 }
@@ -1359,11 +1386,11 @@ body[data-screen="title"] main { padding-bottom: 0; }
   .dk-tile:hover,
   .dk-tile:active,
   .dk-tile.is-focus { transform: none; }
-  .dk-tile:not(.is-focus) { align-items: center; grid-template-rows: auto; }
-  .dk-tile:not(.is-focus) .dk-visual { grid-row: auto; }
-  .dk-tile:not(.is-focus) .dk-desc,
-  .dk-tile:not(.is-focus) .dk-step { display: none; }
-  .dk-tile:not(.is-focus) .dk-count:not(:empty) {
+  .dk-tile { align-items: center; grid-template-rows: auto; }
+  .dk-tile .dk-visual { grid-row: auto; }
+  .dk-tile .dk-desc,
+  .dk-tile .dk-step { display: none; }
+  .dk-tile .dk-count:not(:empty) {
     display: block;
     top: 3px;
     right: 5px;
@@ -1371,10 +1398,7 @@ body[data-screen="title"] main { padding-bottom: 0; }
     color: var(--text);
     font-size: 11px;
   }
-  .dk-tile.is-focus { grid-column: 1 / -1; padding: 12px; }
-  .dk-tile.is-focus .dk-visual { width: 58px; }
-  .dk-tile.is-focus .dk-desc { display: block; overflow: visible; color: var(--text); font-size: 14px; }
-  .dk-tile.is-focus :is(.dk-plus, .dk-minus) { width: 44px; height: 44px; }
+  .dk-tile.is-focus { background: color-mix(in srgb, var(--tier) 30%, var(--bg)); }
   .deck-bag .stone { width: 24px; }
 }
 @media (max-width: 359px) {

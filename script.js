@@ -1400,13 +1400,33 @@ function renderDeckInfo() {
     const selected = tile.dataset.id === id;
     tile.classList.toggle('is-focus', selected);
     const button = tile.querySelector('.dk-body');
-    if (compactDeck.matches) button.setAttribute('aria-expanded', String(selected));
-    else button.removeAttribute('aria-expanded');
+    if (compactDeck.matches) {
+      button.setAttribute('aria-pressed', String(selected));
+      button.setAttribute('aria-controls', 'deck-info');
+    } else {
+      button.removeAttribute('aria-pressed');
+      button.removeAttribute('aria-controls');
+    }
   });
-  if (compactDeck.matches) { el.innerHTML = ''; return; }
+  if (!id && compactDeck.matches) { el.innerHTML = ''; return; }
   if (!id) { el.innerHTML = '<p class="deck-hint">碁石を押すとデッキに入る。<br>強い碁石ほどポイントが高い。</p>'; return; }
   const ab = ABILITIES[id];
   const desc = id === 'plain' ? '超能力のない、ふつうの碁石' : ab.desc;
+  if (compactDeck.matches) {
+    const count = state.edit[id] || 0;
+    const canAdd = deckPoints(state.edit) + costOf(id) <= DECK_POINTS && (id === 'plain' || count < MAX_COPIES);
+    el.innerHTML = `<div class="deck-info-title">
+        ${stoneHTML(deckColor(), id)}
+        <b>${ab.name}</b><span class="dk-coin ${TIER[costOf(id)]}">${costOf(id)}</span>
+      </div>
+      <p class="deck-info-desc">${desc}</p>
+      <div class="deck-info-step" role="group" aria-label="${ab.name}の数">
+        <button type="button" data-deck-change="-1" aria-label="${ab.name}を1つへらす" ${count ? '' : 'disabled'}>−</button>
+        <output aria-label="入っている数">${count}</output>
+        <button type="button" data-deck-change="1" aria-label="${ab.name}を1つ足す" ${canAdd ? '' : 'disabled'}>＋</button>
+      </div>`;
+    return;
+  }
   el.innerHTML = `<span class="deck-demo mini"></span><span class="deck-text"><b>${ab.name}<span class="dk-coin ${TIER[costOf(id)]}">${costOf(id)}</span></b>${desc}</span>`;
   if (Demo.has(id)) Demo.start(el.querySelector('.mini'), id);
 }
@@ -2210,6 +2230,17 @@ function init() {
   $('deck-go').addEventListener('click', saveBuilder);
   $('deck-back').addEventListener('click', () => leaveBuilder(false));
   $('deck-delete').addEventListener('click', deleteBuilder);
+  $('deck-info').addEventListener('click', (e) => {
+    const button = e.target.closest('[data-deck-change]');
+    if (!button || !state.deckFocus) return;
+    const tile = $('deck-catalog').querySelector('.dk-tile.is-focus');
+    const delta = button.dataset.deckChange;
+    changeDeck(state.deckFocus, Number(delta), tile);
+    const target = $('deck-info').querySelector(`[data-deck-change="${delta}"]:enabled`)
+      || $('deck-info').querySelector('[data-deck-change]:enabled')
+      || tile?.querySelector('.dk-body');
+    target?.focus({ preventScroll: true });
+  });
   $('deck-name').addEventListener('input', () => { state.build.dirty = true; });
   $('deck-starters').addEventListener('click', (e) => { const b = e.target.closest('.starter'); if (b) loadTemplate(b.dataset.id); });
   $('online-cancel').addEventListener('click', () => { Net.leave(); startSelect('online'); });
