@@ -363,13 +363,12 @@
     const button = $('share-go');
     const composer = $('share-x');
     button.hidden = mode === 'paste';
-    composer.hidden = mode !== 'paste' && (mode !== 'native' || shareData.canCopy);
+    composer.hidden = mode !== 'paste' && mode !== 'native';
     composer.classList.toggle('btn-primary', mode === 'paste');
     composer.classList.toggle('btn-text', mode !== 'paste');
-    $('share-copy').hidden = mode !== 'native' || !shareData.canCopy;
     let hint;
     if (mode === 'native') {
-      button.textContent = '画像を共有';
+      button.textContent = '端末で共有';
       hint = '共有メニューにXが表示されたら、選んで画像を添付できます。';
     } else if (mode === 'copy') {
       button.textContent = 'Xに投稿する画像をコピー';
@@ -383,12 +382,24 @@
     $('share-hint').textContent = notice + hint;
   }
   async function openShare() {
-    $('share-btn').disabled = true;
+    const button = $('share-btn');
+    const dialog = $('share-dialog');
+    const preview = $('share-img');
+    const actions = $('share-actions');
+    const hint = $('share-hint');
+    button.disabled = true;
+    shareData = null;
+    preview.hidden = true;
+    actions.hidden = true;
+    hint.textContent = '対局画像を作成しています…';
     try {
+      dialog.showModal();
       const blob = await landscape(); // 横長（X のタイムラインで切れずに見える）
+      if (!dialog.open) return;
+      if (!blob) throw new Error('Could not create the result image');
       if (url) URL.revokeObjectURL(url);
       url = URL.createObjectURL(blob);
-      $('share-img').src = url;
+      preview.src = url;
       const file = new File([blob], 'special-gomoku.png', { type: 'image/png' });
       const image = { files: [file] };
       const text = `${state.resultText}（${state.moveCount}手） #超能力五目並べ`;
@@ -402,17 +413,20 @@
       intent.searchParams.set('text', text);
       intent.searchParams.set('url', gameUrl);
       $('share-x').href = intent.href;
-      const canCopy = !!(navigator.clipboard?.write && window.ClipboardItem &&
-        (ClipboardItem.supports?.('image/png') ?? true));
       const touch = matchMedia('(pointer: coarse)').matches;
+      const canCopy = !touch && !!(navigator.clipboard?.write && window.ClipboardItem &&
+        (ClipboardItem.supports?.('image/png') ?? true));
       shareData = { file, native, canCopy };
       $('share-go').disabled = false;
-      $('share-copy').disabled = false;
-      setShareMode(native && (touch || !canCopy) ? 'native' : canCopy ? 'copy' : 'download');
-      $('result-dialog').close();
-      $('share-dialog').showModal();
+      const notice = window.isSecureContext === false ? '端末で共有するにはHTTPSで開いてください。' : '';
+      setShareMode(native ? 'native' : canCopy ? 'copy' : 'download', notice);
+      preview.hidden = false;
+      actions.hidden = false;
+    } catch (error) {
+      console.error('Failed to create the result image', error);
+      if (dialog.open) hint.textContent = '画像を作れませんでした。結果に戻ってもう一度お試しください。';
     } finally {
-      $('share-btn').disabled = false;
+      button.disabled = false;
     }
   }
   function save() {
@@ -429,9 +443,7 @@
       return;
     }
     const button = $('share-go');
-    const copy = $('share-copy');
     button.disabled = true;
-    copy.disabled = true;
     try {
       if (mode === 'native') {
         await navigator.share(data.native);
@@ -450,19 +462,16 @@
       button.disabled = false;
       if ($('share-dialog').open) button.focus();
     } finally {
-      if (data === shareData) {
-        button.disabled = false;
-        copy.disabled = false;
-      }
+      if (data === shareData) button.disabled = false;
     }
   }
 
   function init() {
     if (!$('share-btn')) return;
     $('share-btn').addEventListener('click', openShare);
+    $('share-back').addEventListener('click', () => $('share-dialog').close());
     $('share-save').addEventListener('click', save);
     $('share-go').addEventListener('click', () => share(shareMode));
-    $('share-copy').addEventListener('click', () => share('copy'));
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
   window.ShareImage = { make: (layout = 'classic') => (LAYOUTS[layout] || makeImage)(), layouts: Object.keys(LAYOUTS) };

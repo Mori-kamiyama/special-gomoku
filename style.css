@@ -1430,3 +1430,7 @@ body[data-screen="title"] main { padding-bottom: 0; }
 .dialog-actions { flex-wrap: wrap; justify-content: center; gap: 10px 18px; }
 .dialog-actions button { white-space: nowrap; }
 .dialog-actions .btn-primary { font-family: var(--font-body); font-weight: 700; padding: 0.7em 1.6em; }
+@media (pointer: coarse) {
+  #result-dialog .dialog-actions button { min-height: 44px; }
+  #share-btn { min-width: 72px; }
+}
