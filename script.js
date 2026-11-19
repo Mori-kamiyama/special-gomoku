@@ -29,6 +29,12 @@ const other = (c) => (c === 'b' ? 'w' : 'b');
 
 // ===== アイコン（24×24 の SVG。線は石の文字色で描く） =====
 const ICONS = {
+  cataclysm: '<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" /> <path d="M21 3v5h-5" />',
+  mystery: '<path d="M8.5 9a3.5 3.5 0 1 1 4.8 3.2c-.8.4-1.3 1.1-1.3 2v.8"/><circle cx="12" cy="18.6" r="1.1" fill="currentColor" stroke="none"/>',
+  flipAround: '<path d="M7.5 4v16M3.5 16l4 4 4-4M16.5 20V4M12.5 8l4-4 4 4"/>',
+  revolution: '<path d="m2 9 3-3 3 3" /> <path d="M13 18H7a2 2 0 0 1-2-2V6" /> <path d="m22 15-3 3-3-3" /> <path d="M11 6h6a2 2 0 0 1 2 2v10" />',
+  swapHands: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /> <path d="M21 3v5h-5" /> <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /> <path d="M8 16H3v5" />',
+  fastForward: '<polygon points="5 4 15 12 5 20 5 4" /> <line x1="19" x2="19" y1="5" y2="19" />',
   nuke: '<circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"/><path fill="currentColor" stroke="none" d="M10.25 8.97 7.25 3.77A9.5 9.5 0 0 1 16.75 3.77L13.75 8.97A3.5 3.5 0 0 0 10.25 8.97ZM15.5 12H21.5A9.5 9.5 0 0 1 16.75 20.23L13.75 15.03A3.5 3.5 0 0 0 15.5 12ZM10.25 15.03 7.25 20.23A9.5 9.5 0 0 1 2.5 12H8.5A3.5 3.5 0 0 0 10.25 15.03Z"/>',
   gravity: '<path d="M12 4v15M6 13l6 6 6-6"/>',
   antigravity: '<path d="M12 20V5M6 11l6-6 6 6"/>',
@@ -45,6 +51,8 @@ const ICONS = {
   go: '<circle cx="12" cy="12" r="3.2" fill="currentColor"/><circle cx="12" cy="4.5" r="2"/><circle cx="12" cy="19.5" r="2"/><circle cx="4.5" cy="12" r="2"/><circle cx="19.5" cy="12" r="2"/>',
   joker: '<path d="M12 3l2.7 5.6 6.1.8-4.5 4.2 1.1 6.1L12 16.8l-5.4 2.9 1.1-6.1-4.5-4.2 6.1-.8z" fill="currentColor" stroke="none"/>',
   chain: '<path d="M4.5 6l6 6-6 6M12.5 6l6 6-6 6"/>',
+  warp: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5" fill="currentColor"/><path d="M10 14l4-4M14 13v-3h-3"/>',
+  sniper: '<circle cx="12" cy="12" r="7"/><path d="M12 2.5v5M12 16.5v5M2.5 12h5M16.5 12h5"/><circle cx="12" cy="12" r="1.3" fill="currentColor"/>',
   clone: '<circle cx="8" cy="8" r="4"/><circle cx="16" cy="16" r="4" fill="currentColor"/>',
   cloneH: '<circle cx="6.5" cy="12" r="3.5"/><circle cx="17.5" cy="12" r="3.5" fill="currentColor"/><path d="M12 4v16" stroke-dasharray="2 2.5"/>',
   cloneV: '<circle cx="12" cy="6.5" r="3.5"/><circle cx="12" cy="17.5" r="3.5" fill="currentColor"/><path d="M4 12h16" stroke-dasharray="2 2.5"/>',
@@ -91,6 +99,14 @@ const ABILITIES = {
   antigravity: { name: '反重力', desc: 'いつでも上へ昇る。上に続く石も一緒に押して昇らせる', area: 'up' },
   spin: { name: '回転', desc: 'まわりの8マスを、時計回りに1つずらす', onPlace: (b, x, y) => spinRing(b, x, y, 1), area: 'ring' },
   spinBack: { name: '逆回転', desc: 'まわりの8マスを、反時計回りに1つずらす', onPlace: (b, x, y) => spinRing(b, x, y, -1), area: 'ring' },
+  cataclysm: { name: '天変地異', desc: '盤ぜんぶを、時計回りに90度回す', onPlace: (b) => cataclysmAbility(b) },
+  mystery: { name: 'はてな', desc: '置くまで何の超能力か分からない。置いた瞬間にくじで決まる' },
+  flipAround: { name: 'あべこべ', desc: 'まわり8マスの石の色を、白と黒で入れ替える', onPlace: (b, x, y) => flipColors(b, DIRS8.map(([dx, dy]) => [x + dx, y + dy])), area: 'ring' },
+  revolution: { name: '革命', desc: '盤の石の色が、全部白と黒で入れ替わる', onPlace: (b) => flipColors(b, b.flatMap((row, y) => row.map((_, x) => [x, y]))) },
+  swapHands: { name: '交換', desc: '自分と相手の手札を、そっくり入れ替える', onPlace: (b, x, y, c, st) => swapHandsAbility(st) },
+  fastForward: { name: '早送り', desc: '盤の時限爆弾と増殖を、2手ぶん進める', onPlace: (b, x, y, c, st) => fastForwardAbility(b, st) },
+  warp: { name: 'ワープ', desc: 'まわり3×3の石を、盤の真ん中をはさんだ反対側へ飛ばす。飛んだ先の石は消える', onPlace: warpAbility, area: 'warp' },
+  sniper: { name: 'スナイパー', desc: '置いたあと、盤のどこかの石を1つ選んで消す', onPlace: sniperAbility, aim: true },
   clone: { name: '分身', desc: '盤の真ん中をはさんだ反対側にも、自分の石が1つ増える', onPlace: (b, x, y, c, st) => cloneAt(b, SIZE - 1 - x, SIZE - 1 - y, c, st), area: 'mirror' },
   cloneH: { name: '左右分身', desc: '左右に折り返した位置にも、自分の石が1つ増える', onPlace: (b, x, y, c, st) => cloneAt(b, SIZE - 1 - x, y, c, st), area: 'mirrorH' },
   cloneV: { name: '上下分身', desc: '上下に折り返した位置にも、自分の石が1つ増える', onPlace: (b, x, y, c, st) => cloneAt(b, x, SIZE - 1 - y, c, st), area: 'mirrorV' },
@@ -167,6 +183,86 @@ function nukeAbility(board, x, y) {
   }
   return fx;
 }
+
+// 天変地異：盤ぜんぶを時計回りに90度回す。(x, y) → (10 - y, x)
+function cataclysmAbility(board) {
+  const fx = [];
+  const old = board.map((row) => row.slice());
+  for (let y = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++) board[y][x] = null;
+  for (let y = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++) {
+    const p = old[y][x];
+    if (!p) continue;
+    const nx = SIZE - 1 - y, ny = x;
+    board[ny][nx] = p;
+    if (nx !== x || ny !== y) fx.push({ kind: 'moved', x: nx, y: ny, fromX: x, fromY: y });
+  }
+  return fx;
+}
+
+// あべこべ・革命：石の色を白と黒で入れ替える。スパイはただの石になる。誰のものでもない石はそのまま
+function flipColors(board, cells) {
+  const fx = [];
+  for (const [x, y] of cells) {
+    const p = inside(x, y) && board[y][x];
+    if (!p || p.color === 'n') continue;
+    p.color = other(p.color);
+    if (p.ability === 'spy') { p.ability = 'plain'; delete p.owner; }
+    fx.push({ kind: 'flipped', x, y });
+  }
+  return fx;
+}
+
+// 交換：自分と相手の手札を入れ替える（足りない分は、あとで山札から引く）
+function swapHandsAbility(st) {
+  if (!st || !st.players || !st.players.b) return [];
+  const a = st.players.b.hand;
+  st.players.b.hand = st.players.w.hand;
+  st.players.w.hand = a;
+  return [];
+}
+
+// 早送り：時限爆弾の導火線を2つ縮め、増殖の石を（持ち主の番1回ぶん）育てる
+function fastForwardAbility(board, st) {
+  return [...fuseTick(board, null), ...fuseTick(board, null), ...growth(board, 'b', st), ...growth(board, 'w', st)];
+}
+
+// はてな：置いた瞬間に、くじで超能力が決まる（撃つ先を選ぶスナイパーと、置き場所に決まりのあるスパイは出ない）
+const pickMystery = () => { const pool = SPECIAL_IDS.filter((id) => !['mystery', 'sniper', 'spy'].includes(id)); return pool[Math.floor(rng() * pool.length)]; };
+
+// ワープ：置いた石を真ん中にした3×3の石を、盤の中心について点対称の位置へ飛ばす。
+// 飛んだ先にあった石は消える（盾は消えないので、盾の上には飛ばない）。重しは動かない
+function warpAbility(board, x, y) {
+  const fx = [];
+  const moving = [];
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+    const sx = x + dx, sy = y + dy;
+    const p = inside(sx, sy) && board[sy][sx];
+    if (!p || isFixed(p)) continue;
+    moving.push({ sx, sy, tx: SIZE - 1 - sx, ty: SIZE - 1 - sy, p });
+  }
+  const srcs = new Set(moving.map((m) => `${m.sx},${m.sy}`));
+  // 飛んだ先が、動かない盾なら飛ばない
+  const go = moving.filter((m) => { const d = board[m.ty][m.tx]; return !(d && isShielded(d) && !srcs.has(`${m.tx},${m.ty}`)); });
+  for (const m of go) board[m.sy][m.sx] = null;
+  for (const m of go) {
+    const d = board[m.ty][m.tx];
+    if (d) fx.push({ kind: 'gone', x: m.tx, y: m.ty, color: d.color });
+    board[m.ty][m.tx] = m.p;
+    fx.push({ kind: 'moved', x: m.tx, y: m.ty, fromX: m.sx, fromY: m.sy });
+  }
+  return fx;
+}
+
+// スナイパー：選んだ石を1つ消す（盾は消えない）。選んでいなければ何もしない
+function sniperAbility(board, x, y, color, st) {
+  const fx = [];
+  const t = st && st.target;
+  if (t && inside(t[0], t[1]) && !(t[0] === x && t[1] === y)) removeStone(board, fx, t[0], t[1]);
+  for (const f of fx) f.by = 'sniper';
+  return fx;
+}
+// スナイパーで狙える石か
+const canSnipe = (board, x, y, fromX, fromY) => inside(x, y) && !!board[y][x] && !isShielded(board[y][x]) && !(x === fromX && y === fromY);
 
 // 時限爆弾：置いてから2手（相手の1手と自分の1手）たつと爆発する。まわり8マスの石と自分が消える
 const FUSE = 2;
@@ -491,9 +587,11 @@ const MAX_COPIES = 3; // 同じ超能力は3つまで
 const COST = {
   plain: 1,
   gravity: 2, antigravity: 2, mine: 2, jam: 2, go: 2, weight: 2, shield: 2, wall: 2, joker: 2, push: 2,
-  bomb: 3, timeBomb: 3, rowBomb: 3, colBomb: 3, spin: 3, spinBack: 3, clone: 3, cloneH: 3, cloneV: 3, seal: 3, suck: 3, flag: 3,
-  diagBomb: 4, takeover: 4, grow: 4, chain: 4,
-  othello: 5, nuke: 6,
+  mystery: 2, fastForward: 2,
+  bomb: 3, timeBomb: 3, warp: 3, swapHands: 3, rowBomb: 3, colBomb: 3, spin: 3, spinBack: 3, clone: 3, cloneH: 3, cloneV: 3, seal: 3, suck: 3, flag: 3,
+  diagBomb: 4, sniper: 4, takeover: 4, grow: 4, chain: 4,
+  othello: 5, cataclysm: 5, flipAround: 5, nuke: 6,
+  revolution: 8,
   spy: 3, // リーチがあると置けないので、安くした
 };
 const costOf = (id) => COST[id] || 3;
@@ -640,8 +738,9 @@ function resolvePlacement(board, x, y, color, id, st) {
 // ===== 1手を打つ（DOM に依存しない部分） =====
 // 1手の中の順番：能力の効果 → 重力・反重力 → 囲碁と地雷 → （変わらなくなるまで重力と囲碁をくり返す）→ 勝ち判定
 // 戻り値：{ ok, ability, steps, winner, extraTurn }。steps は段階ごとの盤と演出（画面で順に見せる）
-function playMove(x, y) {
+function playMove(x, y, target = null) {
   const color = state.turn;
+  state.target = target; // スナイパーで狙う石
   const p = state.players[color];
   const card = p.hand[state.selected];
   if (state.phase !== 'play' || !card) return { ok: false };
@@ -653,20 +752,25 @@ function playMove(x, y) {
   state.selected = 0;
   state.moveCount++;
 
-  const ab = ABILITIES[id];
+  const rolled = id === 'mystery' ? pickMystery() : null; // はてな：くじで決まった超能力
+  const actual = rolled || id;
+  const ab = ABILITIES[actual];
   if (wasSealed) state.sealed = null;
   state.jammed = null;
-  const { piece, steps, allFx, before } = resolvePlacement(state.board, x, y, color, id, state);
+  const { piece, steps, allFx, before } = resolvePlacement(state.board, x, y, color, actual, state);
   state.lastMove = findUid(state.board, piece.uid);
   state.fx = steps[steps.length - 1].fx;
 
-  let text = `${nameOf(color)}が${ab.name}を${colLabel(x)}${y + 1}に置いた${describeFx(allFx)}`;
+  let text = `${nameOf(color)}が${ABILITIES[id].name}を${colLabel(x)}${y + 1}に置いた${describeFx(allFx)}`;
   if (wasSealed && card.ability !== 'plain') text = `${nameOf(color)}は封印されていて、${ABILITIES[card.ability].name}がただの石になった`;
   log(text);
+  if (rolled) log(`はてなは「${ABILITIES[rolled].name}」になった`);
+  if (actual === 'swapHands') log('手札が入れ替わった');
   if (id === 'seal') log(`${nameOf(other(color))}は次の番、超能力が使えない`);
   if (id === 'jam') { const n = allFx.filter((f) => f.kind === 'neutralized').length; log(n ? `まわりの碁石${n}個の超能力が消えた` : 'まわりに超能力の碁石がなかった'); }
 
   fillHand(p);
+  if (actual === 'swapHands') fillHand(state.players[other(color)]);
 
   // 勝ち判定（置いた場所と関係ないところに列ができることもあるので、盤全体を見る）
   let winner = null;
@@ -686,7 +790,7 @@ function playMove(x, y) {
     state.phase = 'end';
     state.winner = winner;
     log(`${nameOf(winner)}の勝ち`);
-    return { ok: true, ability: id, steps, before, winner, extraTurn: false };
+    return { ok: true, ability: actual, rolled, steps, before, winner, extraTurn: false };
   }
 
   // 次の番。碁石がない人は飛ばし、2人ともなければ引き分け
@@ -709,7 +813,7 @@ function playMove(x, y) {
     if (ab.extraTurn && next === color) log(`${nameOf(color)}がもう1回`);
     state.turn = next;
   }
-  return { ok: true, ability: id, steps, before, winner: null, extraTurn: !!ab.extraTurn };
+  return { ok: true, ability: actual, rolled, steps, before, winner: null, extraTurn: !!ab.extraTurn };
 }
 
 function describeFx(fx) {
@@ -773,7 +877,7 @@ const ICON_EDIT = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" strok
 const ICON_COPY = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>';
 const escapeHTML = (t) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const CHOICE_KEY = 'gomoku-choice';
-const TIER = { 1: 't1', 2: 't2', 3: 't3', 4: 't4', 5: 't5', 6: 't6' }; // ポイントの色分け
+const TIER = { 1: 't1', 2: 't2', 3: 't3', 4: 't4', 5: 't5', 6: 't6', 8: 't6' }; // ポイントの色分け
 const CATALOG = ['plain', ...SPECIAL_IDS].sort((x, y) => costOf(x) - costOf(y));
 
 // 自分のデッキ：[{ id, name, deck }]。ブラウザに保存する
@@ -848,6 +952,7 @@ function renderSelect() {
   }).join('');
   const nameField = $('name-field');
   nameField.hidden = state.mode !== 'online';
+  $('word-field').hidden = state.mode !== 'online';
   if (state.mode === 'online') $('my-name').value = loadMyName();
   const go = $('select-go');
   go.hidden = manage;
@@ -1142,12 +1247,14 @@ function startGame(seed = newSeed()) {
   state.lastMove = null;
   state.fx = [];
   state.winLine = null;
+  state.history = [];
   state.winner = undefined;
   state.moveCount = 0;
   state.pending = null;
   state.busy = false;
   state.lastActive = null;
   log('黒から');
+  $('game-screen').classList.toggle('me-w', state.mode === 'online' && state.myColor === 'w');
   showScreen('game');
   buildBoard();
   renderGame();
@@ -1175,7 +1282,7 @@ async function maybeCpuMove() {
   await sleep(500);
   clearPreview();
   state.busy = false;
-  place(move.x, move.y);
+  place(move.x, move.y, false, move.target || null);
 }
 
 function buildBoard() {
@@ -1268,6 +1375,7 @@ function areaCells(id, x, y, b) {
   if (area === 'row') for (let k = -R; k <= R; k++) mark(x + k, y);
   if (area === 'col') for (let k = -R; k <= R; k++) mark(x, y + k);
   if (area === 'diag') for (let k = -R; k <= R; k++) { mark(x + k, y + k); mark(x + k, y - k); }
+  if (area === 'warp') for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { mark(x + dx, y + dy); mark(SIZE - 1 - x - dx, SIZE - 1 - y - dy); }
   if (area === 'sq5') for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) mark(x + dx, y + dy);
   if (area === 'square') for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) mark(x + dx, y + dy);
   if (area === 'down') for (let cy = y + 1; inside(x, cy) && !b[cy][x]; cy++) mark(x, cy);
@@ -1409,6 +1517,7 @@ function selectCard(i) {
   const card = state.players[state.turn].hand[i];
   if (cardBlocked(card, state.turn)) { Sound.deny(); const el = $(`panel-${state.turn}`).querySelectorAll('.hand-piece')[i]; if (el) { el.classList.remove('is-bump'); void el.offsetWidth; el.classList.add('is-bump'); } return; }
   if (state.selected !== i) Sound.select();
+  endAim();
   state.selected = i;
   renderPanel(state.turn);
   if (!state.busy) renderBoard();
@@ -1451,15 +1560,47 @@ function renderLog() {
 }
 
 // タッチでは、1回目のタップで場所を選び、同じマスをもう一度タップして置く
+// ===== スナイパーで狙う =====
+// 置くマスを決めたら「狙う」状態になる。盤の石を押すと、そこを撃って置く。空きマスや同じマスを押すとやめる
+function startAim(x, y) {
+  state.aim = [x, y];
+  clearPreview();
+  renderBoard();
+  const b = $('board');
+  b.classList.add('is-aiming');
+  const ghost = b.querySelector(`.cell[data-x="${x}"][data-y="${y}"]`);
+  if (ghost) ghost.insertAdjacentHTML('beforeend', stoneHTML(state.turn, 'sniper', 'is-ghost is-pending'));
+  for (let yy = 0; yy < SIZE; yy++) for (let xx = 0; xx < SIZE; xx++) {
+    if (canSnipe(state.board, xx, yy, x, y)) b.querySelector(`.cell[data-x="${xx}"][data-y="${yy}"]`).classList.add('is-target');
+  }
+  $('game-status').querySelector('.status-text').textContent = '撃つ石を選ぶ（空きマスでやめる）';
+}
+function endAim() {
+  if (!state.aim) return;
+  state.aim = null;
+  $('board').classList.remove('is-aiming');
+  for (const c of $('board').querySelectorAll('.is-target')) c.classList.remove('is-target');
+  for (const g of $('board').querySelectorAll('.stone.is-ghost.is-pending')) g.remove();
+  renderStatus();
+}
+
 function onCellTap(x, y, pointerType) {
   const card = selectedCard();
   const cell = state.board[y] && state.board[y][x];
+  // 狙っているとき：石を押したら撃つ。それ以外はやめる
+  if (state.aim) {
+    const [ax, ay] = state.aim;
+    if (canSnipe(state.board, x, y, ax, ay)) { place(ax, ay, false, [x, y]); return; }
+    endAim();
+    return;
+  }
   const canPlace = state.phase === 'play' && card && !notMine(state.turn) && !state.cpuThinking && canPlaceAt(x, y, state.turn, effectiveAbility(card, state.turn));
   // 置けない碁石の上を押したら、その碁石の説明を出す（もう一度押すと閉じる）
   if (cell && !canPlace) { toggleStoneTip(x, y); return; }
   hideStoneTip();
   if (!canPlace) return;
-  // 演出の途中なら予約する（先行入力）。同じマスをもう一度押すと取り消し
+  // 演出の途中なら予約する（先行入力）。同じマスをもう一度押すと取り消し。スナイパーは狙う手順があるので予約しない
+  if (state.busy && ABILITIES[effectiveAbility(card, state.turn)].aim) return;
   if (state.busy) {
     const same = state.queued && state.queued[0] === x && state.queued[1] === y;
     state.queued = same ? null : [x, y];
@@ -1476,15 +1617,25 @@ function onCellTap(x, y, pointerType) {
   }
   state.pending = null;
   clearPreview();
+  // スナイパー：撃てる石があれば、置くマスを決めてから狙う
+  if (ABILITIES[effectiveAbility(card, state.turn)].aim) {
+    let any = false;
+    for (let yy = 0; yy < SIZE && !any; yy++) for (let xx = 0; xx < SIZE; xx++) if (canSnipe(state.board, xx, yy, x, y)) { any = true; break; }
+    if (any) { startAim(x, y); return; }
+  }
   place(x, y);
 }
 
-async function place(x, y, remote = false) {
+async function place(x, y, remote = false, target = null) {
   hideStoneTip(); // 盤が変わるので、碁石の説明は閉じる
+  endAim();
   const color = state.turn;
   const sent = selectedCard();
-  if (state.mode === 'online' && !remote && sent) Net.send('move', { id: sent.id, x, y });
-  const res = playMove(x, y);
+  if (state.mode === 'online' && !remote && sent) Net.send('move', { id: sent.id, x, y, target });
+  const playedId = sent && effectiveAbility(sent, color);
+  const res = playMove(x, y, target);
+  // 棋譜：画面で実際に置いた手だけを残す（CPU の読みの中の手は入れない）
+  if (res.ok) (state.history = state.history || []).push({ color, id: playedId, actual: res.ability, x, y, target });
   if (!res.ok) return;
   state.busy = true;
   renderPanel('w');
@@ -1547,7 +1698,8 @@ function runRemoteQueue() {
   const { type, data } = q.shift();
   if (type === 'move' && state.phase === 'play' && isRemote(state.turn)) {
     const i = state.players[state.turn].hand.findIndex((c) => c.id === data.id);
-    if (i >= 0) { state.selected = i; place(data.x, data.y, true); return true; }
+    const t = Array.isArray(data.target) && data.target.length === 2 ? data.target.map(Number) : null;
+    if (i >= 0) { state.selected = i; place(data.x, data.y, true, t); return true; }
   }
   return runRemoteQueue();
 }
@@ -1590,6 +1742,8 @@ function showResult(mover) {
   }
   $('result-text').textContent = text;
   $('result-sub').textContent = sub;
+  state.resultText = text;
+  state.resultSub = sub;
   $('deck-again').hidden = state.mode === 'online';
   const happy = state.winner && !notMine(state.winner);
   if (happy) Sound.win(); else Sound.lose();
@@ -1613,9 +1767,12 @@ async function startOnline() {
   $('online-title').textContent = '対戦相手をさがしています';
   $('online-sub').textContent = 'つないでいます…';
   try {
+    const word = ($('my-word').value || '').trim();
+    if (word) $('online-title').textContent = `あいことば「${word}」で待っています`;
     const { isHost } = await Net.find((n) => {
-      $('online-sub').textContent = n > 0 ? `いま、ほかに ${n}人がさがしています` : 'ほかにさがしている人を待っています';
-    });
+      $('online-sub').textContent = word ? (n > 0 ? '相手が来ました。つないでいます…' : '同じあいことばの相手を待っています')
+        : n > 0 ? `いま、ほかに ${n}人がさがしています` : 'ほかにさがしている人を待っています';
+    }, word);
     if (state.phase !== 'online') return; // やめるが押された
     $('online-title').textContent = '見つかりました！';
     $('online-sub').textContent = '';
@@ -1747,6 +1904,7 @@ function onKey(e) {
   if (document.querySelector('dialog[open]')) return;
   if (state.phase === 'play' && ['1', '2', '3'].includes(e.key)) selectCard(Number(e.key) - 1);
   if (e.key === 'Escape' && state.pending) { state.pending = null; clearPreview(); }
+  if (e.key === 'Escape') endAim();
 }
 
 function init() {
@@ -1812,6 +1970,6 @@ if (typeof module !== 'undefined') {
   module.exports = {
     setSeed, SIZE, ABILITIES, ICONS, SPECIAL_IDS, LINE_DIRS,
     findWin, specialWin, lineOwner, countsFor, growth, newBoard, newPiece, playMove, resolvePlacement, snapshot, areaCells, settle, goTraps, mineCheck,
-    state, makePlayer, STARTERS, COST, DECK_POINTS, MAX_COPIES, costOf, deckPoints, deckCount, deckList, hasReach, cardBlocked, spyCompletes, pushColumn, makeCard, effectiveAbility, canPlaceAt, inside, other, shuffle,
+    state, makePlayer, STARTERS, COST, DECK_POINTS, MAX_COPIES, costOf, deckPoints, deckCount, deckList, hasReach, cardBlocked, spyCompletes, canSnipe, pushColumn, makeCard, effectiveAbility, canPlaceAt, inside, other, shuffle,
   };
 }

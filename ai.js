@@ -113,15 +113,34 @@
     const st = G.state;
     const moves = [];
     st.players[st.turn].hand.forEach((card, i) => {
-      if (G.cardBlocked(card, st.turn)) return; // スパイは、相手にリーチがあると置けない
-      for (const [x, y] of candidateCells(G.effectiveAbility(card, st.turn), limit)) moves.push({ i, x, y });
+      if (G.cardBlocked(card, st.turn)) return; // 連続のあとの連続は置けない
+      const id = G.effectiveAbility(card, st.turn);
+      const cells = candidateCells(id, limit);
+      if (id === 'sniper') {
+        // スナイパー：置くマスは上位3つ、撃つ石は、相手の石のうち仲間の多いもの上位6つ
+        const me = st.turn, b = st.board, targets = [];
+        for (let y = 0; y < G.SIZE; y++) for (let x = 0; x < G.SIZE; x++) {
+          const p = b[y][x];
+          if (!p || p.color === me || p.color === 'n' || p.ability === 'shield') continue;
+          let n = 0;
+          for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const q = G.inside(x + dx, y + dy) && b[y + dy][x + dx]; if (q && q.color === p.color) n++; }
+          targets.push({ x, y, n });
+        }
+        targets.sort((a, c) => c.n - a.n);
+        for (const [x, y] of cells.slice(0, 3)) {
+          if (!targets.length) moves.push({ i, x, y });
+          for (const t of targets.slice(0, 6)) moves.push({ i, x, y, target: [t.x, t.y] });
+        }
+        return;
+      }
+      for (const [x, y] of cells) moves.push({ i, x, y });
     });
     return moves;
   }
 
   function apply(m) {
     G.state.selected = m.i;
-    return G.playMove(m.x, m.y);
+    return G.playMove(m.x, m.y, m.target || null);
   }
 
   function chooseMove(opts = {}) {

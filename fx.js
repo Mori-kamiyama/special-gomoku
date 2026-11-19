@@ -38,7 +38,8 @@
     invert: { name: '反転', tint: '#e8e6e1', c: ['#1f1d1a', '#8a847c', '#ffffff'], smoke: ['#2a2622', '#e8e6e1'] },
   };
   const ELEMENT_OF = {
-    nuke: 'fire', timeBomb: 'fire', bomb: 'fire', rowBomb: 'fire', colBomb: 'fire', diagBomb: 'fire',
+    nuke: 'fire', timeBomb: 'fire', bomb: 'fire', warp: 'vortex', sniper: 'thunder',
+    cataclysm: 'vortex', mystery: 'shadow', flipAround: 'invert', revolution: 'invert', swapHands: 'wind', fastForward: 'thunder', rowBomb: 'fire', colBomb: 'fire', diagBomb: 'fire',
     push: 'wind',
     suck: 'vortex', spin: 'vortex', spinBack: 'vortex',
     gravity: 'gravity', antigravity: 'gravity',
@@ -434,6 +435,18 @@
   // 碁石ごとの衝撃の組み合わせ。shake は盤の揺れの強さ（効果が大きいほど強く）
   const RECIPE = {
     bomb: { el: 'fire', impact: (e, x, y, s) => IMPACT.fire(e, x, y, s, { pw: 1 }), shake: 1.1 },
+    // 天変地異：大きな渦と、強い揺れ
+    cataclysm: { el: 'vortex', impact: (e, x, y, s) => { IMPACT.vortex(e, x, y, s, { dir: 1 }); P.ring(e, x, y, s, { col: ELEMENTS.vortex.c[1], wid: 0.2, far: 4, dur: 0.7 }); }, shake: 1.6 },
+    mystery: { el: 'shadow', impact: (e, x, y, s) => IMPACT.shadow(e, x, y, s, { sparkle: true }) },
+    flipAround: { el: 'invert', impact: (e, x, y, s) => IMPACT.invert(e, x, y, s), shake: 0.4 },
+    // 革命：盤いっぱいに広がる反転の輪
+    revolution: { el: 'invert', impact: (e, x, y, s) => { IMPACT.invert(e, x, y, s); P.ring(e, x, y, s, { col: ELEMENTS.invert.c[1], wid: 0.3, far: 7, dur: 0.8 }); }, shake: 1.4 },
+    swapHands: { el: 'wind', impact: (e, x, y, s) => IMPACT.wind(e, x, y, s), shake: 0.2 },
+    fastForward: { el: 'thunder', impact: (e, x, y, s) => IMPACT.thunder(e, x, y, s, { bolts: 2 }), shake: 0.2 },
+    // ワープ：渦が巻いて、反対側へ
+    warp: { el: 'vortex', impact: (e, x, y, s) => IMPACT.vortex(e, x, y, s, { contract: true }), shake: 0.3 },
+    // スナイパー：照準の輪が縮んで、撃つ（当たった石は、あとの段階で砕ける）
+    sniper: { el: 'thunder', impact: (e, x, y, s) => { P.ring(e, x, y, s, { col: INK, wid: 0.06, far: 0.4, near: 1.3, inward: true, split: 4, dur: 0.3 }); }, shake: 0.2 },
     // 時限爆弾：置いたときは小さく火花が散るだけ（爆発は2手あと）
     timeBomb: { el: 'fire', impact: (e, x, y, s) => { P.ring(e, x, y, s, { col: ELEMENTS.fire.c[1], wid: 0.1, far: 1.1, dur: 0.35 }); P.dots(e, x, y, s, { n: 5, cols: ELEMENTS.fire.c }); }, shake: 0.15 },
     // 核：爆弾の倍の大きさ。白い閃光の輪が2重に広がり、遅れてもう一度ふくらむ
@@ -542,6 +555,7 @@
           P.shards(e, px, py, s, f.color || 'b', { ux: o.origin ? ux / d : 0, uy: o.origin ? uy / d : -1 });
           if (f.by === 'go') { P.ring(e, px, py, s, { col: ELEMENTS.earth.c[1], wid: 0.14, far: 0.4, near: 1.2, inward: true, split: 4, dur: 0.4 }); P.rocks(e, px, py, s, ELEMENTS.earth.c, { n: 4 }); }
           if (f.by === 'mine') IMPACT.thunder(e, px, py, s, { bolts: 3 });
+          if (f.by === 'sniper') { P.ring(e, px, py, s, { col: ELEMENTS.fire.c[0], wid: 0.1, far: 0.3, near: 1.2, inward: true, split: 4, dur: 0.25 }); }
         } else if (f.kind === 'neutralized') {
           // おじゃま：超能力が抜ける（紫の弧が閉じて、ぽんと消える）
           P.arcs(e, px, py, s, { n: 3, r0: 0.9, r1: 0.2, dir: -1, col: ELEMENTS.curse.c[1], width: 3, dur: 0.4, len: 0.9, turn: 1 });

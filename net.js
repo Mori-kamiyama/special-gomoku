@@ -51,6 +51,13 @@
     else (pending[type] = pending[type] || []).push(data);
   }
 
+  // あいことばから部屋の名前を作る（あいことばそのものは、部屋の名前に出さない）
+  function hash(text) {
+    let h = 2166136261;
+    for (const ch of String(text)) { h ^= ch.codePointAt(0); h = Math.imul(h, 16777619); }
+    return (h >>> 0).toString(36);
+  }
+
   function cleanup() {
     clearInterval(timer); timer = null;
     try { if (lobby) lobby.leave(); } catch (e) { /* すでに抜けている */ }
@@ -60,11 +67,12 @@
   }
 
   const Net = {
-    async find(onCount = () => {}) {
+    // word（あいことば）を渡すと、同じあいことばの人だけが集まる部屋で相手をさがす（あいことばで中身も暗号にする）
+    async find(onCount = () => {}, word = '') {
       cleanup();
       const { joinRoom, selfId } = await load();
       await loadIce();
-      lobby = joinRoom(config(), 'lobby');
+      lobby = word ? joinRoom({ ...config(), password: word }, `room-${hash(word)}`) : joinRoom(config(), 'lobby');
       const [sendInvite, getInvite] = lobby.makeAction('invite');
       const [sendAnswer, getAnswer] = lobby.makeAction('answer');
       const [sendBusy, getBusy] = lobby.makeAction('busy');
