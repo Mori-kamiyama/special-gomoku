@@ -56,7 +56,11 @@
 
     <!-- デッキをえらぶ -->
     <section id="select-screen" class="screen select-screen" hidden>
-      <h2 id="select-title" class="phase-title select-title">デッキをえらぼう！</h2>
+      <div class="select-heading">
+        <h2 id="select-title" class="phase-title select-title">デッキをえらぼう！</h2>
+        <button type="button" id="deck-import" class="btn-text">コードを読み込む</button>
+      </div>
+      <span id="deck-copy-announcement" role="status"></span>
       <div id="select-cols" class="select-cols"></div>
       <div class="select-foot">
         <label id="name-field" class="name-field" hidden>
@@ -138,6 +142,25 @@
         <button type="button" id="again-btn" class="btn-primary">もう一局</button>
       </div>
     </div>
+  </dialog>
+
+    <div id="deck-copy-menu" popover role="group" aria-label="コピー方法">
+        <button type="button" id="deck-copy-local" class="btn-text">デッキを複製</button>
+        <button type="button" id="deck-copy-code" class="btn-text">デッキコードをコピー</button>
+        <textarea id="deck-copy-text" rows="3" readonly hidden aria-label="共有用デッキコード"></textarea>
+        <p id="deck-copy-status" role="status"></p>
+    </div>
+
+  <dialog id="deck-code-dialog" class="dialog" aria-labelledby="deck-code-title">
+    <form id="deck-code-form" class="dialog-body">
+      <h2 id="deck-code-title">デッキコードを読み込む</h2>
+      <textarea id="deck-code" rows="4" maxlength="2048" aria-label="デッキコード" aria-describedby="deck-code-status" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+      <p id="deck-code-status" role="status"></p>
+      <div class="dialog-actions">
+        <button type="button" id="deck-code-close" class="btn-text">閉じる</button>
+        <button type="submit" class="btn-primary">追加する</button>
+      </div>
+    </form>
   </dialog>
 
   <dialog id="log-dialog" class="dialog">

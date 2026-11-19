@@ -582,6 +582,8 @@ function shuffle(arr) {
 
 // ===== デッキ =====
 // 24ポイントまで組める。ただの石は1ポイント。強い碁石ほど高い（数と強さのトレードオフ）
+// 碁石の追加・削除、コスト・能力・対局ルールの変更時に上げる。UI の変更では上げない。
+const RULES_VERSION = 1;
 const DECK_POINTS = 24;
 const MAX_COPIES = 3; // 同じ超能力は3つまで
 const COST = {
@@ -879,30 +881,199 @@ const escapeHTML = (t) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', 
 const CHOICE_KEY = 'gomoku-choice';
 const TIER = { 1: 't1', 2: 't2', 3: 't3', 4: 't4', 5: 't5', 6: 't6', 8: 't6' }; // ポイントの色分け
 const CATALOG = ['plain', ...SPECIAL_IDS].sort((x, y) => costOf(x) - costOf(y));
+const DECK_CODE_PREFIX = 'GOMOKU1.'; // デッキコードの形式。ルールの版とは別
+const DECK_CODE_MAX_LENGTH = 2048;
 
-// 自分のデッキ：[{ id, name, deck }]。ブラウザに保存する
+function deckError(deck) {
+    if (!deck || typeof deck !== 'object' || Array.isArray(deck) || !Object.keys(deck).length) {
+        return 'デッキに碁石が入っていません。';
+    }
+    for (const [id, count] of Object.entries(deck)) {
+        if (!CATALOG.includes(id)) return '今のルールにない碁石が入っています。';
+        if (!Number.isSafeInteger(count) || count < 1) return '碁石の数が正しくありません。';
+        if (id !== 'plain' && count > MAX_COPIES) return `同じ超能力は${MAX_COPIES}個まで入れられます。`;
+    }
+    if (deckPoints(deck) > DECK_POINTS) return `${DECK_POINTS}ポイントを超えています。`;
+    return '';
+}
+
+function encodeDeckCode({ name, version, deck }) {
+    const bytes = new TextEncoder().encode(JSON.stringify({ name, version, deck }));
+    return DECK_CODE_PREFIX + btoa(String.fromCharCode(...bytes));
+}
+
+function decodeDeckCode(text) {
+    const invalid = 'デッキコードを読み取れません。コード全体を貼り付けてください。';
+    const code = text.trim();
+    if (!code.startsWith(DECK_CODE_PREFIX) || code.length > DECK_CODE_MAX_LENGTH) throw new Error(invalid);
+
+    let data;
+    try {
+        const bytes = Uint8Array.from(atob(code.slice(DECK_CODE_PREFIX.length)), (c) => c.charCodeAt(0));
+        data = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+    } catch {
+        throw new Error(invalid);
+    }
+    if (!data || typeof data.name !== 'string' ||
+        (data.version !== null && (!Number.isSafeInteger(data.version) || data.version < 1))) {
+        throw new Error(invalid);
+    }
+    if (data.version > RULES_VERSION) throw new Error('新しいルールのデッキです。ゲームを更新してから読み込んでください。');
+    const error = deckError(data.deck);
+    if (error) throw new Error([deckVersionNote(data.version), error].filter(Boolean).join('。'));
+    return { name: data.name.trim().slice(0, 16) || '共有デッキ', version: data.version, deck: data.deck };
+}
+
+function deckVersionNote(version) {
+    if (version === null) return 'ルールの版が不明';
+    if (version < RULES_VERSION) return `旧ルール v${version}`;
+    if (version > RULES_VERSION) return `新ルール v${version}`;
+    return '';
+}
+
+// 自分のデッキ：[{ id, name, version, deck }]。ブラウザに保存する
 function loadMyDecks() {
   try {
     const list = JSON.parse(localStorage.getItem(DECKS_KEY));
-    if (Array.isArray(list)) return list.filter((d) => d && d.id && d.deck).map((d) => ({ ...d, deck: Object.fromEntries(Object.entries(d.deck).filter(([id]) => id === 'plain' || ABILITIES[id])) })).filter((d) => deckCount(d.deck));
+    if (Array.isArray(list)) return list.filter((d) => d && d.id && d.deck).map((d) => ({ ...d, version: d.version ?? null, deck: Object.fromEntries(Object.entries(d.deck).filter(([id]) => id === 'plain' || ABILITIES[id])) })).filter((d) => deckCount(d.deck));
     const old = JSON.parse(localStorage.getItem('gomoku-deck')); // 前の版で1つだけ保存していたもの
-    if (old && typeof old === 'object' && deckCount(old)) return [{ id: 'd1', name: 'じぶんのデッキ', deck: old }];
+    if (old && typeof old === 'object' && deckCount(old)) return [{ id: 'd1', name: 'じぶんのデッキ', version: null, deck: old }];
   } catch (e) { /* 読めなければ空 */ }
   return [];
 }
-function saveMyDecks(list) { try { localStorage.setItem(DECKS_KEY, JSON.stringify(list)); } catch (e) { /* 保存できなくても遊べる */ } }
+function saveMyDecks(list) {
+    try {
+        localStorage.setItem(DECKS_KEY, JSON.stringify(list));
+        return true;
+    } catch {
+        return false;
+    }
+}
 function loadChoice() { try { return JSON.parse(localStorage.getItem(CHOICE_KEY)) || {}; } catch (e) { return {}; } }
 function saveChoice(c) { try { localStorage.setItem(CHOICE_KEY, JSON.stringify(c)); } catch (e) { /* 保存できなくても遊べる */ } }
+
+function newDeckId(list) {
+    const existing = new Set(list.map((d) => d.id));
+    const base = `d${Date.now().toString(36)}`;
+    let id = base;
+    for (let n = 2; existing.has(id); n++) id = `${base}-${n}`;
+    return id;
+}
+
+let deckCopyButton = null;
+
+function positionDeckCopy(button) {
+    const menu = $('deck-copy-menu');
+    const card = button.closest('.sel-card').getBoundingClientRect();
+    const gap = 6;
+    const margin = 8;
+    const width = document.documentElement.clientWidth;
+    const height = document.documentElement.clientHeight;
+    const right = card.right + gap;
+    const rightLimit = width - menu.offsetWidth - margin;
+    const left = Math.max(margin, Math.min(right, rightLimit));
+    const above = card.top - gap;
+
+    menu.style.maxHeight = left < right ? `${Math.max(44, above - margin)}px` : '';
+    const top = Math.max(margin, Math.min(above - menu.offsetHeight, height - menu.offsetHeight - margin));
+    menu.style.left = `${left}px`;
+    menu.style.top = `${top}px`;
+}
+
+function toggleDeckCopy(ref, button) {
+    const menu = $('deck-copy-menu');
+    if (menu.matches(':popover-open')) {
+        menu.hidePopover();
+        if (deckCopyButton === button) return;
+    }
+
+    deckCopyButton = button;
+    menu.dataset.ref = ref;
+    $('deck-copy-code').disabled = !!deckError(deckByRef(ref).deck);
+    $('deck-copy-text').hidden = true;
+    $('deck-copy-status').textContent = '';
+    $('deck-copy-announcement').textContent = '';
+    menu.showPopover({ source: button });
+    positionDeckCopy(button);
+    $('deck-copy-local').focus({ preventScroll: true });
+}
+
+function addDeckToList(data, status) {
+    const list = loadMyDecks();
+    list.push({ id: newDeckId(list), ...data });
+    if (!saveMyDecks(list)) {
+        status.textContent = 'デッキを保存できませんでした。';
+        return false;
+    }
+
+    return true;
+}
+
+function duplicateDeck() {
+    const menu = $('deck-copy-menu');
+    const d = deckByRef(menu.dataset.ref);
+    const suffix = 'のコピー';
+    const name = d.name.slice(0, 16 - suffix.length) + suffix;
+    if (addDeckToList({ name, version: d.version, deck: d.deck }, $('deck-copy-status'))) {
+        menu.hidePopover();
+        renderSelect(true);
+    }
+}
+
+function openDeckImport() {
+    $('deck-code').value = '';
+    $('deck-code-status').textContent = '';
+    $('deck-code-dialog').showModal();
+    $('deck-code').focus();
+}
+
+async function copyDeckCode() {
+    const menu = $('deck-copy-menu');
+    const button = deckCopyButton;
+    const code = encodeDeckCode(deckByRef(menu.dataset.ref));
+    try {
+        await navigator.clipboard.writeText(code);
+        if (deckCopyButton === button) menu.hidePopover();
+        $('deck-copy-announcement').textContent = 'デッキコードをコピーしました。';
+    } catch {
+        if (!menu.matches(':popover-open') || deckCopyButton !== button) return;
+        const input = $('deck-copy-text');
+        $('deck-copy-status').textContent = '選択したコードを手動でコピーしてください。';
+        input.value = code;
+        input.hidden = false;
+        positionDeckCopy(button);
+        input.focus({ preventScroll: true });
+        input.select();
+        input.scrollIntoView({ block: 'nearest' });
+    }
+}
+
+function importDeckCode(event) {
+    event.preventDefault();
+    const status = $('deck-code-status');
+    let data;
+    try {
+        data = decodeDeckCode($('deck-code').value);
+    } catch (error) {
+        status.textContent = error.message;
+        return;
+    }
+
+    if (addDeckToList(data, status)) {
+        $('deck-code-dialog').close();
+        renderSelect(true);
+    }
+}
 
 // デッキの参照：'preset:balance' か 'my:d3'
 function deckByRef(ref) {
   if (!ref) return null;
   if (ref.startsWith('preset:')) {
     const st = STARTERS.find((x) => `preset:${x.id}` === ref);
-    return st && { ref, name: st.name, note: st.note, deck: st.deck, preset: true };
+    return st && { ...st, ref, version: RULES_VERSION, preset: true };
   }
   const d = loadMyDecks().find((x) => `my:${x.id}` === ref);
-  return d && { ref, name: d.name, note: '', deck: d.deck, id: d.id };
+  return d && { ...d, ref };
 }
 const allRefs = () => [...STARTERS.map((s) => `preset:${s.id}`), ...loadMyDecks().map((d) => `my:${d.id}`)];
 function deckIcons(deck, color, max) {
@@ -911,7 +1082,7 @@ function deckIcons(deck, color, max) {
 }
 
 // ===== デッキをえらぶ =====
-// mode：pvp は黒と白が横に並んで選ぶ。cpu と online は自分だけ。manage はタイトルの「デッキ」（作る・直すだけ）
+// CPU と2人対戦では、黒と白のデッキをそれぞれ選ぶ
 function startSelect(mode = state.mode) {
   for (const d of document.querySelectorAll('dialog[open]')) d.close();
   state.mode = mode;
@@ -919,44 +1090,66 @@ function startSelect(mode = state.mode) {
   state.remoteQueue = [];
   state.logs = [];
   const saved = loadChoice();
-  const ok = (r) => (deckByRef(r) ? r : null);
+  const ok = (ref) => {
+    const d = deckByRef(ref);
+    return d && !deckError(d.deck) ? ref : null;
+  };
   state.choice = {
     b: ok(state.choice && state.choice.b) || ok(saved.b) || 'preset:balance',
     w: ok(state.choice && state.choice.w) || ok(saved.w) || 'preset:mass',
+    cpu: ok(state.choice && state.choice.cpu) || ok(saved.cpu) || 'random',
   };
   showScreen('select');
+  $('deck-copy-announcement').textContent = '';
   renderSelect();
 }
 
-const selectCols = () => (state.mode === 'pvp' ? ['b', 'w'] : ['b']);
+const selectCols = () => (state.mode === 'pvp' || state.mode === 'cpu' ? ['b', 'w'] : ['b']);
+const choiceSlot = (color, mode = state.mode) => (mode === 'cpu' && color === CPU_COLOR ? 'cpu' : color);
 
-function renderSelect() {
-  const pvp = state.mode === 'pvp', manage = state.mode === 'manage';
+function renderSelect(preserveScroll = false) {
+  const copyMenu = $('deck-copy-menu');
+  if (copyMenu.matches(':popover-open')) copyMenu.hidePopover();
+  const scrolls = preserveScroll ? [...$('select-cols').querySelectorAll('.sel-list')].map((el) => el.scrollTop) : [];
+  const twoCols = selectCols().length === 2, manage = state.mode === 'manage';
   $('select-screen').dataset.mode = state.mode;
   $('select-title').textContent = manage ? 'デッキ' : 'デッキをえらぼう！';
   const refs = allRefs();
   $('select-cols').innerHTML = selectCols().map((color) => {
-    const head = pvp ? `<p class="sel-head"><span class="who-stone stone-${color}"></span>${COLOR_NAME[color]}のデッキ</p>` : '';
+    const label = isCpu(color) ? 'CPUのデッキ' : `${COLOR_NAME[color]}のデッキ`;
+    const head = twoCols ? `<p class="sel-head"><span class="who-stone stone-${color}"></span>${label}</p>` : '';
+    const selected = state.choice[choiceSlot(color)];
+    const random = isCpu(color) ? `<button type="button" class="sel-card ${selected === 'random' ? 'is-on' : ''}" data-ref="random" data-color="${color}" aria-pressed="${selected === 'random'}">
+      <span class="sel-name">おまかせ</span>
+      <span class="sel-meta">スターターからランダム</span>
+    </button>` : '';
     const cards = refs.map((ref) => {
       const d = deckByRef(ref);
-      const on = !manage && state.choice[color] === ref;
+      const on = !manage && selected === ref;
+      const invalid = !!deckError(d.deck);
+      const versionNote = deckVersionNote(d.version);
       return `<div class="sel-card ${on ? 'is-on' : ''} ${d.preset ? 'is-preset' : 'is-mine'}" data-ref="${ref}" data-color="${color}" role="button" tabindex="0" aria-pressed="${on}">
         <span class="sel-name">${escapeHTML(d.name)}${d.preset ? '<span class="sel-tag">スターター</span>' : ''}</span>
-        <span class="sel-stones">${deckIcons(d.deck, color, pvp ? 6 : 9)}</span>
+        <span class="sel-stones">${deckIcons(d.deck, color, twoCols ? 6 : 9)}</span>
         <span class="sel-meta"><b>${deckCount(d.deck)}</b>個${d.note ? `<span class="sel-note">・${d.note}</span>` : ''}</span>
-        <button type="button" class="sel-edit" aria-label="${escapeHTML(d.name)}を${d.preset ? 'もとに作る' : '直す'}" title="${d.preset ? 'これをもとに作る' : '直す'}">${d.preset ? ICON_COPY : ICON_EDIT}</button>
+        ${versionNote || invalid ? `<span class="sel-version">${[versionNote, invalid ? '要調整' : ''].filter(Boolean).join('・')}</span>` : ''}
+        <span class="sel-actions">
+          ${d.preset ? '' : `<button type="button" class="sel-edit" aria-label="${escapeHTML(d.name)}を直す" title="直す">${ICON_EDIT}</button>`}
+          <button type="button" class="sel-copy" aria-label="${escapeHTML(d.name)}をコピー" title="コピー" popovertarget="deck-copy-menu">${ICON_COPY}</button>
+        </span>
       </div>`;
     }).join('');
     const add = `<button type="button" class="sel-card sel-new" data-color="${color}"><span class="sel-plus">＋</span>新しいデッキを作る</button>`;
-    return `<div class="sel-col" data-color="${color}">${head}<div class="sel-list">${cards}${add}</div></div>`;
+    return `<div class="sel-col" data-color="${color}">${head}<div class="sel-list">${random}${cards}${add}</div></div>`;
   }).join('');
+  $('select-cols').querySelectorAll('.sel-list').forEach((el, i) => { el.scrollTop = scrolls[i] || 0; });
   const nameField = $('name-field');
   nameField.hidden = state.mode !== 'online';
   $('word-field').hidden = state.mode !== 'online';
   if (state.mode === 'online') $('my-name').value = loadMyName();
   const go = $('select-go');
   go.hidden = manage;
-  go.textContent = pvp ? 'この2つで対戦' : state.mode === 'online' ? 'このデッキで相手をさがす' : 'このデッキで対戦';
+  go.textContent = twoCols ? 'この2つで対戦' : state.mode === 'online' ? 'このデッキで相手をさがす' : 'このデッキで対戦';
 }
 
 function onSelectClick(e) {
@@ -965,32 +1158,40 @@ function onSelectClick(e) {
   const card = e.target.closest('.sel-card');
   if (!card) return;
   const { ref, color } = card.dataset;
-  if (e.target.closest('.sel-edit') || state.mode === 'manage') { openBuilder(ref, color); return; }
-  if (state.choice[color] === ref) return;
-  state.choice[color] = ref;
-  saveChoice(state.choice);
-  Sound.select();
-  renderSelect();
-  const on = $('select-cols').querySelector(`.sel-card[data-ref="${ref}"][data-color="${color}"]`);
-  if (on) { on.classList.add('is-picked'); }
-}
-
-// 決定：2人で対戦なら黒と白、CPU は自分だけ（CPU はスターターデッキからくじ）、オンラインは相手をさがす
-function confirmSelect() {
-  const mine = deckByRef(state.choice.b);
-  if (!mine) return;
-  saveChoice(state.choice);
-  if (state.mode === 'pvp') {
-    const theirs = deckByRef(state.choice.w);
-    state.decks = { b: mine.deck, w: theirs.deck };
-    state.deckNames = { b: mine.name, w: theirs.name };
-    startGame();
+  const copy = e.target.closest('.sel-copy');
+  if (copy) {
+    e.preventDefault();
+    toggleDeckCopy(ref, copy);
     return;
   }
-  if (state.mode === 'cpu') {
-    const cpu = STARTERS[Math.floor(Math.random() * STARTERS.length)];
-    state.decks = { b: mine.deck, w: cpu.deck };
-    state.deckNames = { b: mine.name, w: cpu.name };
+  if (e.target.closest('.sel-edit') || state.mode === 'manage' || (ref !== 'random' && deckError(deckByRef(ref).deck))) {
+    openBuilder(ref, color);
+    return;
+  }
+  const slot = choiceSlot(color);
+  if (state.choice[slot] === ref) return;
+  state.choice[slot] = ref;
+  saveChoice(state.choice);
+  Sound.select();
+  renderSelect(true);
+  const on = $('select-cols').querySelector(`.sel-card[data-ref="${ref}"][data-color="${color}"]`);
+  if (on) {
+    on.classList.add('is-picked');
+    if (e.type === 'keydown' || e.detail === 0) on.focus({ preventScroll: true });
+  }
+}
+
+// ローカル対戦では選んだ2つで開始し、オンラインでは自分のデッキで相手を探す
+function confirmSelect() {
+  const mine = deckByRef(state.choice.b);
+  if (!mine || deckError(mine.deck)) return;
+  saveChoice(state.choice);
+  if (state.mode === 'pvp' || state.mode === 'cpu') {
+    const ref = state.choice[choiceSlot('w')];
+    const theirs = ref === 'random' ? STARTERS[Math.floor(Math.random() * STARTERS.length)] : deckByRef(ref);
+    if (!theirs || deckError(theirs.deck)) return;
+    state.decks = { b: mine.deck, w: theirs.deck };
+    state.deckNames = { b: mine.name, w: theirs.name };
     startGame();
     return;
   }
@@ -1028,18 +1229,21 @@ function leaveBuilder(saved) {
 
 function saveBuilder() {
   const deck = { ...state.edit };
-  if (!deckCount(deck)) return;
+  if (deckError(deck)) return;
   const list = loadMyDecks();
   const name = ($('deck-name').value || '').trim().slice(0, 16) || `デッキ${list.length + 1}`;
-  let id = state.build.id;
-  if (id) { const d = list.find((x) => x.id === id); if (d) { d.name = name; d.deck = deck; } } else {
-    id = `d${Date.now().toString(36)}`;
-    list.push({ id, name, deck });
+  const id = state.build.id || newDeckId(list);
+  const entry = { id, name, version: RULES_VERSION, deck };
+  const index = list.findIndex((d) => d.id === id);
+  if (index < 0) list.push(entry);
+  else list[index] = entry;
+  if (!saveMyDecks(list)) {
+    bump(null, 'デッキを保存できませんでした');
+    return;
   }
-  saveMyDecks(list);
   if (state.build.returnMode !== 'manage') {
     state.choice = state.choice || {};
-    state.choice[state.build.color] = `my:${id}`;
+    state.choice[choiceSlot(state.build.color, state.build.returnMode)] = `my:${id}`;
     saveChoice(state.choice);
   }
   Sound.pick();
@@ -1048,7 +1252,10 @@ function saveBuilder() {
 
 function deleteBuilder() {
   if (!state.build.id || !window.confirm(`「${$('deck-name').value}」を消しますか？`)) return;
-  saveMyDecks(loadMyDecks().filter((d) => d.id !== state.build.id));
+  if (!saveMyDecks(loadMyDecks().filter((d) => d.id !== state.build.id))) {
+    bump(null, 'デッキを消せませんでした');
+    return;
+  }
   state.build.dirty = false;
   leaveBuilder(true);
 }
@@ -1146,7 +1353,7 @@ function renderDeck(full = false) {
     renderDeck();
   };
   renderDeckInfo();
-  $('deck-go').disabled = count === 0;
+  $('deck-go').disabled = !!deckError(deck);
 }
 
 function focusDeck(id) {
@@ -1918,8 +2125,20 @@ function init() {
   $('start-online').addEventListener('click', (e) => expandThen(e.currentTarget, () => startSelect('online')));
   $('decks-btn').addEventListener('click', () => { if (state.phase === 'play' && !window.confirm('対局の途中です。デッキの画面に行きますか？')) return; startSelect('manage'); });
   $('select-cols').addEventListener('click', onSelectClick);
-  $('select-cols').addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target.classList.contains('sel-card')) { e.preventDefault(); onSelectClick(e); } });
+  $('select-cols').addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.sel-card[role=button]')) { e.preventDefault(); onSelectClick(e); } });
   $('select-go').addEventListener('click', confirmSelect);
+  $('deck-import').addEventListener('click', openDeckImport);
+  $('deck-copy-local').addEventListener('click', duplicateDeck);
+  $('deck-copy-code').addEventListener('click', copyDeckCode);
+  const copyMenu = $('deck-copy-menu');
+  window.addEventListener('scroll', (e) => {
+    if (e.target !== copyMenu && copyMenu.matches(':popover-open')) copyMenu.hidePopover();
+  }, true);
+  window.addEventListener('resize', () => {
+    if (copyMenu.matches(':popover-open')) positionDeckCopy(deckCopyButton);
+  });
+  $('deck-code-form').addEventListener('submit', importDeckCode);
+  $('deck-code-close').addEventListener('click', () => $('deck-code-dialog').close());
   $('my-name').addEventListener('input', (e) => saveMyName(cleanName(e.target.value)));
   $('deck-go').addEventListener('click', saveBuilder);
   $('deck-back').addEventListener('click', () => leaveBuilder(false));
@@ -1970,6 +2189,7 @@ if (typeof document !== 'undefined') {
 }
 if (typeof module !== 'undefined') {
   module.exports = {
+    RULES_VERSION, encodeDeckCode, decodeDeckCode,
     setSeed, SIZE, ABILITIES, ICONS, SPECIAL_IDS, LINE_DIRS,
     findWin, specialWin, lineOwner, countsFor, growth, newBoard, newPiece, playMove, resolvePlacement, snapshot, areaCells, settle, goTraps, mineCheck,
     state, makePlayer, STARTERS, COST, DECK_POINTS, MAX_COPIES, costOf, deckPoints, deckCount, deckList, hasReach, cardBlocked, spyCompletes, canSnipe, pushColumn, makeCard, effectiveAbility, canPlaceAt, inside, other, shuffle,

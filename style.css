@@ -1041,9 +1041,67 @@ body[data-screen="title"] main { padding-bottom: 0; }
   min-height: 420px;
   padding-top: 2px;
 }
-.select-title { margin: 0 0 12px; font-weight: 400; }
+.select-heading {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    margin-bottom: 12px;
+}
+.select-title { margin: 0; font-weight: 400; }
+#deck-import { flex-shrink: 0; }
+#deck-copy-announcement {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+#deck-code-status:empty { margin: 0; }
+#deck-code-form { width: min(420px, calc(100vw - 32px)); }
+#deck-code, #deck-copy-text {
+    width: 100%;
+    resize: vertical;
+    padding: 9px 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 16px;
+}
+#deck-code-status, #deck-copy-status { font-size: 13px; overflow-wrap: anywhere; }
+#deck-copy-status { margin: 4px 6px; }
+#deck-copy-status:empty { margin: 0; }
+#deck-copy-menu {
+    position: fixed;
+    inset: auto;
+    width: min(218px, calc(100vw - 16px));
+    max-height: calc(100dvh - 16px);
+    margin: 0;
+    padding: 4px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--bg);
+    color: var(--text);
+    box-shadow: 0 4px 14px rgb(0 0 0 / 14%);
+}
+#deck-copy-menu button {
+    display: block;
+    width: 100%;
+    padding: 8px 10px;
+    border-radius: 6px;
+    color: inherit;
+    text-align: left;
+    text-decoration: none;
+}
+#deck-copy-menu button:enabled:hover, #deck-copy-menu button:focus-visible {
+    background: color-mix(in srgb, var(--text) 8%, var(--bg));
+}
+#deck-copy-text { margin-top: 4px; }
 .select-cols { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
-.select-screen[data-mode="pvp"] .select-cols { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.select-screen:is([data-mode="pvp"], [data-mode="cpu"]) .select-cols { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .sel-col { display: flex; flex-direction: column; min-height: 0; gap: 8px; }
 .sel-head { display: flex; align-items: center; gap: 8px; margin: 0; font-weight: 700; font-size: clamp(15px, 4vw, 19px); }
 .sel-head .who-stone { width: 1.15em; height: 1.15em; }
@@ -1060,9 +1118,10 @@ body[data-screen="title"] main { padding-bottom: 0; }
   margin: -4px;
   scrollbar-width: thin;
 }
-.select-screen[data-mode="pvp"] .sel-list { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+.select-screen:is([data-mode="pvp"], [data-mode="cpu"]) .sel-list { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
 
 .sel-card {
+  color: inherit;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -1091,7 +1150,7 @@ body[data-screen="title"] main { padding-bottom: 0; }
 }
 .sel-card.is-picked { animation: picked 0.35s cubic-bezier(0.3, 1.6, 0.5, 1); }
 @keyframes picked { 40% { transform: scale(1.04); } }
-.sel-name { display: flex; align-items: center; gap: 8px; padding-right: 36px; font-weight: 700; font-size: 16px; line-height: 1.25; }
+.sel-name { display: flex; align-items: center; gap: 8px; padding-right: 36px; font-weight: 700; font-size: 16px; line-height: 1.25; overflow-wrap: anywhere; }
 .sel-tag { padding: 1px 7px; border-radius: 99px; background: color-mix(in srgb, var(--text) 10%, transparent); font-size: 10.5px; font-weight: 700; opacity: 0.8; white-space: nowrap; }
 .sel-card.is-on .sel-tag { background: color-mix(in srgb, var(--bg) 20%, transparent); }
 .sel-stones { display: flex; align-items: center; gap: 4px; min-height: 24px; flex-wrap: wrap; }
@@ -1101,10 +1160,16 @@ body[data-screen="title"] main { padding-bottom: 0; }
 .sel-stones .more { font-size: 12px; font-weight: 700; opacity: 0.7; }
 .sel-meta { font-size: 12px; opacity: 0.72; padding-right: 28px; }
 .sel-meta b { font-size: 15px; margin-right: 1px; }
-.sel-edit {
-  position: absolute;
-  right: 8px;
-  top: 8px;
+.sel-version { font-size: 12px; font-weight: 700; }
+.sel-actions {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    display: flex;
+    gap: 2px;
+}
+.sel-card.is-mine .sel-name { padding-right: 64px; }
+.sel-actions button {
   display: grid;
   place-items: center;
   width: 32px;
@@ -1118,8 +1183,8 @@ body[data-screen="title"] main { padding-bottom: 0; }
   cursor: pointer;
   transition: opacity 0.15s, background 0.15s, transform 0.15s;
 }
-.sel-edit svg { width: 18px; height: 18px; }
-.sel-edit:hover { opacity: 1; background: color-mix(in srgb, currentColor 14%, transparent); transform: rotate(-8deg) scale(1.08); }
+.sel-actions svg { width: 18px; height: 18px; }
+.sel-actions button:hover { opacity: 1; background: color-mix(in srgb, currentColor 14%, transparent); transform: rotate(-8deg) scale(1.08); }
 .sel-new {
   align-items: center;
   justify-content: center;
@@ -1139,12 +1204,14 @@ body[data-screen="title"] main { padding-bottom: 0; }
 
 /* 2人で対戦のスマホ：列が細いので、札を小さく */
 @media (max-width: 599px) {
-  .select-screen[data-mode="pvp"] .sel-list { grid-template-columns: minmax(0, 1fr); gap: 8px; }
-  .select-screen[data-mode="pvp"] .sel-card { padding: 9px 10px; gap: 5px; }
-  .select-screen[data-mode="pvp"] .sel-name { font-size: 14px; flex-wrap: wrap; gap: 4px; }
-  .select-screen[data-mode="pvp"] .sel-stones .stone { width: 18px; }
-  .select-screen[data-mode="pvp"] .sel-edit { width: 28px; height: 28px; right: 4px; top: 4px; }
-  .select-screen[data-mode="pvp"] .sel-new { min-height: 64px; font-size: 13px; }
+  .select-screen:is([data-mode="pvp"], [data-mode="cpu"]) .sel-list { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .select-screen:is([data-mode="pvp"], [data-mode="cpu"]) .sel-card { padding: 9px 10px; gap: 5px; }
+  .select-screen:is([data-mode="pvp"], [data-mode="cpu"]) .sel-name { font-size: 14px; flex-wrap: wrap; gap: 4px; }
+  .select-screen:is([data-mode="pvp"], [data-mode="cpu"]) .sel-stones .stone { width: 18px; }
+  .select-screen:is([data-mode="pvp"], [data-mode="cpu"]) .sel-actions { right: 4px; top: 4px; }
+  .select-screen:is([data-mode="pvp"], [data-mode="cpu"]) .sel-actions button { width: 28px; height: 28px; }
+  .select-screen:is([data-mode="pvp"], [data-mode="cpu"]) .sel-card.is-mine .sel-name { padding-right: 54px; }
+  .select-screen:is([data-mode="pvp"], [data-mode="cpu"]) .sel-new { min-height: 64px; font-size: 13px; }
 }
 
 /* ===== デッキを作る：見出し（もどる・名前・ひな形） ===== */
@@ -1188,8 +1255,8 @@ body[data-screen="title"] main { padding-bottom: 0; }
 .meter-nums { gap: 10px; }
 .meter-num b { font-size: clamp(24px, 3.6vh, 32px); }
 @media (max-width: 599px) {
-  .select-screen[data-mode="pvp"] .sel-meta { font-size: 11px; }
-  .select-screen[data-mode="pvp"] .sel-meta span, .select-screen[data-mode="pvp"] .sel-note { display: none; }
+  .select-screen:is([data-mode="pvp"], [data-mode="cpu"]) .sel-meta { font-size: 11px; }
+  .select-screen:is([data-mode="pvp"], [data-mode="cpu"]) .sel-meta span, .select-screen:is([data-mode="pvp"], [data-mode="cpu"]) .sel-note { display: none; }
 }
 
 /* ===== デッキを選ぶ：選んだ札は強調色 ===== */
