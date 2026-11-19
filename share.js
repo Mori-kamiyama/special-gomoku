@@ -358,51 +358,75 @@
 
   let shareData, url, shareMode;
 
-  function setShareMode(mode) {
+  function setShareMode(mode, notice = '') {
     shareMode = mode;
     const button = $('share-go');
-    button.disabled = false;
+    const composer = $('share-x');
     button.hidden = mode === 'paste';
-    $('share-x').hidden = mode !== 'paste';
+    composer.hidden = mode !== 'paste' && mode !== 'native';
+    composer.classList.toggle('btn-primary', mode === 'paste');
+    composer.classList.toggle('btn-text', mode !== 'paste');
+    let hint;
     if (mode === 'native') {
-      button.textContent = '画像を共有';
-      $('share-hint').textContent = '共有メニューからXなどを選べます。';
+      button.textContent = '端末で共有';
+      hint = '共有メニューにXが表示されたら、選んで画像を添付できます。';
     } else if (mode === 'copy') {
       button.textContent = 'Xに投稿する画像をコピー';
-      $('share-hint').textContent = 'コピーした画像を、Xの投稿欄に貼り付けられます。';
+      hint = 'コピーした画像を、Xの投稿欄に貼り付けられます。';
     } else if (mode === 'paste') {
-      $('share-hint').textContent = '画像をコピーしました。Xの投稿欄で貼り付けてください（Ctrl+V / ⌘V）。';
+      hint = '画像をコピーしました。Xの投稿欄で貼り付けてください。';
     } else {
       button.textContent = '画像を保存してXを開く';
-      $('share-hint').textContent = 'Xの投稿画面で、保存した画像を添付してください。';
+      hint = 'Xの投稿画面で、保存した画像を添付してください。';
     }
+    $('share-hint').textContent = notice + hint;
   }
   async function openShare() {
-    $('share-btn').disabled = true;
+    const button = $('share-btn');
+    const dialog = $('share-dialog');
+    const preview = $('share-img');
+    const actions = $('share-actions');
+    const hint = $('share-hint');
+    button.disabled = true;
+    shareData = null;
+    preview.hidden = true;
+    actions.hidden = true;
+    hint.textContent = '対局画像を作成しています…';
     try {
+      dialog.showModal();
       const blob = await landscape(); // 横長（X のタイムラインで切れずに見える）
+      if (!dialog.open) return;
+      if (!blob) throw new Error('Could not create the result image');
       if (url) URL.revokeObjectURL(url);
       url = URL.createObjectURL(blob);
-      $('share-img').src = url;
-      shareData = {
-        files: [new File([blob], 'special-gomoku.png', { type: 'image/png' })],
-        text: `${state.resultText}（${state.moveCount}手） #超能力五目並べ`,
-        url: `https://${URL_TEXT}/`,
-      };
+      preview.src = url;
+      const file = new File([blob], 'special-gomoku.png', { type: 'image/png' });
+      const image = { files: [file] };
+      const text = `${state.resultText}（${state.moveCount}手） #超能力五目並べ`;
+      const gameUrl = `https://${URL_TEXT}/`;
+      const post = { ...image, text, url: gameUrl };
+      let native = null;
+      if (navigator.share && navigator.canShare?.(image)) {
+        native = navigator.canShare(post) ? post : image;
+      }
       const intent = new URL('https://twitter.com/intent/tweet');
-      intent.searchParams.set('text', shareData.text);
-      intent.searchParams.set('url', shareData.url);
+      intent.searchParams.set('text', text);
+      intent.searchParams.set('url', gameUrl);
       $('share-x').href = intent.href;
-      const canShareImage = !!(navigator.share && navigator.canShare?.(shareData));
-      const canCopyImage = !!(navigator.clipboard?.write && window.ClipboardItem &&
-        (ClipboardItem.supports?.('image/png') ?? true));
       const touch = matchMedia('(pointer: coarse)').matches;
-      const preferCopy = !touch && canCopyImage;
-      setShareMode(preferCopy ? 'copy' : canShareImage ? 'native' : 'download');
-      $('result-dialog').close();
-      $('share-dialog').showModal();
+      const canCopy = !touch && !!(navigator.clipboard?.write && window.ClipboardItem &&
+        (ClipboardItem.supports?.('image/png') ?? true));
+      shareData = { file, native, canCopy };
+      $('share-go').disabled = false;
+      const notice = window.isSecureContext === false ? '端末で共有するにはHTTPSで開いてください。' : '';
+      setShareMode(native ? 'native' : canCopy ? 'copy' : 'download', notice);
+      preview.hidden = false;
+      actions.hidden = false;
+    } catch (error) {
+      console.error('Failed to create the result image', error);
+      if (dialog.open) hint.textContent = '画像を作れませんでした。結果に戻ってもう一度お試しください。';
     } finally {
-      $('share-btn').disabled = false;
+      button.disabled = false;
     }
   }
   function save() {
@@ -411,9 +435,9 @@
     a.href = url; a.download = `special-gomoku-${Date.now()}.png`;
     document.body.appendChild(a); a.click(); a.remove();
   }
-  async function share() {
+  async function share(mode) {
     const data = shareData;
-    if (shareMode === 'download') {
+    if (mode === 'download') {
       save();
       window.open($('share-x').href, '_blank', 'noopener,noreferrer');
       return;
@@ -421,19 +445,21 @@
     const button = $('share-go');
     button.disabled = true;
     try {
-      if (shareMode === 'native') {
-        await navigator.share(data);
+      if (mode === 'native') {
+        await navigator.share(data.native);
       } else {
-        await navigator.clipboard.write([new ClipboardItem({ 'image/png': data.files[0] })]);
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': data.file })]);
         if (data !== shareData) return;
         setShareMode('paste');
         if ($('share-dialog').open) $('share-x').focus();
       }
     } catch (e) {
       if (data !== shareData || e.name === 'AbortError') return;
-      const action = shareMode === 'native' ? '共有' : 'コピー';
-      setShareMode('download');
-      $('share-hint').textContent = `画像を${action}できませんでした。保存してXで添付できます。`;
+      if (mode === 'native') data.native = null;
+      else data.canCopy = false;
+      const action = mode === 'native' ? '共有' : 'コピー';
+      setShareMode(data.native ? 'native' : data.canCopy ? 'copy' : 'download', `画像を${action}できませんでした。`);
+      button.disabled = false;
       if ($('share-dialog').open) button.focus();
     } finally {
       if (data === shareData) button.disabled = false;
@@ -443,8 +469,9 @@
   function init() {
     if (!$('share-btn')) return;
     $('share-btn').addEventListener('click', openShare);
+    $('share-back').addEventListener('click', () => $('share-dialog').close());
     $('share-save').addEventListener('click', save);
-    $('share-go').addEventListener('click', share);
+    $('share-go').addEventListener('click', () => share(shareMode));
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
   window.ShareImage = { make: (layout = 'classic') => (LAYOUTS[layout] || makeImage)(), layouts: Object.keys(LAYOUTS) };
