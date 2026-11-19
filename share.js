@@ -363,57 +363,122 @@
 
   const LAYOUTS = { classic: makeImage, poster, versus, journey, posterBig, posterBleed, posterTall, landscape };
 
-  let file = null, url = null, request = null;
+  let shareData, url, shareMode, request;
+
   function clearShare() {
     request = null;
-    file = null;
+    shareData = null;
     if (url) URL.revokeObjectURL(url);
     url = null;
     $('share-img').removeAttribute('src');
   }
 
+  function setShareMode(mode, notice = '') {
+    shareMode = mode;
+    const button = $('share-go');
+    const composer = $('share-x');
+    button.hidden = mode === 'paste';
+    composer.hidden = mode !== 'paste';
+    let hint;
+    if (mode === 'native') {
+      button.textContent = '端末で画像を共有';
+      hint = '端末の共有メニューでXやLINEを選べます。';
+    } else if (mode === 'copy') {
+      button.textContent = 'Xに投稿する画像をコピー';
+      hint = 'コピーした画像を、Xの投稿欄に貼り付けられます。';
+    } else if (mode === 'paste') {
+      hint = '画像をコピーしました。Xの投稿欄で貼り付けてください。';
+    } else {
+      button.textContent = '画像を保存してXを開く';
+      hint = '保存した画像は、Xの投稿やLINEのトークに添付できます。';
+    }
+    $('share-hint').textContent = notice + hint;
+  }
   async function openShare() {
     const dialog = $('share-dialog');
     if (dialog.open) return;
     clearShare();
     const current = {};
     request = current;
-    $('share-img').hidden = $('share-save').hidden = $('share-go').hidden = true;
-    $('share-status').textContent = '盤面の画像を作成中…';
+    const preview = $('share-img');
+    const actions = $('share-actions');
+    const hint = $('share-hint');
+    const inPlay = state.phase === 'play';
+    const title = inPlay ? '対局中' : $('result-text').textContent || state.resultText;
+    const text = `${title}（${state.moveCount}手） #超能力五目並べ`;
+    $('share-back').textContent = $('result-dialog').open ? '結果に戻る' : '盤面に戻る';
+    preview.hidden = true;
+    actions.hidden = true;
+    hint.textContent = '対局画像を作成しています…';
     dialog.showModal();
     try {
-      const blob = await landscape(state.phase === 'play');
+      const blob = await landscape(inPlay);
       if (request !== current || !dialog.open) return;
       if (!blob) throw new Error('画像を作成できませんでした');
-      file = new File([blob], 'special-gomoku.png', { type: 'image/png' });
-      url = URL.createObjectURL(file);
-      $('share-img').src = url;
-      $('share-img').hidden = $('share-save').hidden = false;
-      $('share-go').hidden = !(typeof navigator.share === 'function' && navigator.canShare?.({ files: [file] }));
-      $('share-status').textContent = $('share-go').hidden
-        ? '画像を保存して、Xの投稿やLINEのトークに添付できます。'
-        : '共有先からXやLINEを選べます。表示されない場合は画像を保存して添付してください。';
-    } catch {
-      if (request === current && dialog.open) $('share-status').textContent = '盤面の画像を作成できませんでした。';
+      url = URL.createObjectURL(blob);
+      preview.src = url;
+      const file = new File([blob], 'special-gomoku.png', { type: 'image/png' });
+      const image = { files: [file] };
+      const gameUrl = `https://${URL_TEXT}/`;
+      const touch = matchMedia('(pointer: coarse)').matches;
+      const post = { ...image, text, url: gameUrl };
+      let native = null;
+      if (navigator.share && navigator.canShare?.(image)) {
+        // スマホでは共有先が投稿文やURLを優先しないよう、PNGだけを渡す。
+        native = !touch && navigator.canShare(post) ? post : image;
+      }
+      const intent = new URL('https://twitter.com/intent/tweet');
+      intent.searchParams.set('text', text);
+      intent.searchParams.set('url', gameUrl);
+      $('share-x').href = intent.href;
+      const canCopy = !touch && !!(navigator.clipboard?.write && window.ClipboardItem &&
+        (ClipboardItem.supports?.('image/png') ?? true));
+      shareData = { file, native, canCopy };
+      $('share-go').disabled = false;
+      const notice = window.isSecureContext === false ? '端末で共有するにはHTTPSで開いてください。' : '';
+      setShareMode(native ? 'native' : canCopy ? 'copy' : 'download', notice);
+      preview.hidden = false;
+      actions.hidden = false;
+    } catch (error) {
+      console.error('対局画像を作成できませんでした', error);
+      if (request === current && dialog.open) hint.textContent = '画像を作れませんでした。閉じてもう一度お試しください。';
     }
   }
-
   function save() {
     if (!url) return;
     const a = document.createElement('a');
     a.href = url; a.download = `special-gomoku-${Date.now()}.png`;
     document.body.appendChild(a); a.click(); a.remove();
   }
-
-  async function share() {
-    if (!file) return;
-    const current = request;
+  async function share(mode) {
+    const data = shareData;
+    if (!data) return;
+    if (mode === 'download') {
+      save();
+      window.open($('share-x').href, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    const button = $('share-go');
+    button.disabled = true;
     try {
-      await navigator.share({ files: [file] });
-    } catch (error) {
-      if (error.name !== 'AbortError' && request === current) {
-        $('share-status').textContent = '共有できませんでした。画像を保存して、XやLINEに添付してください。';
+      if (mode === 'native') {
+        await navigator.share(data.native);
+      } else {
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': data.file })]);
+        if (data !== shareData) return;
+        setShareMode('paste');
+        if ($('share-dialog').open) $('share-x').focus();
       }
+    } catch (e) {
+      if (data !== shareData || e.name === 'AbortError') return;
+      if (mode === 'native') data.native = null;
+      else data.canCopy = false;
+      const action = mode === 'native' ? '共有' : 'コピー';
+      setShareMode(data.native ? 'native' : data.canCopy ? 'copy' : 'download', `画像を${action}できませんでした。`);
+      button.disabled = false;
+      if ($('share-dialog').open) button.focus();
+    } finally {
+      if (data === shareData) button.disabled = false;
     }
   }
 
@@ -421,11 +486,12 @@
     if (!$('share-btn')) return;
     $('share-btn').addEventListener('click', openShare);
     $('share-board-btn').addEventListener('click', openShare);
-    $('share-save').addEventListener('click', save);
-    $('share-go').addEventListener('click', share);
     $('share-dialog').addEventListener('close', (event) => {
       if (!event.currentTarget.open) clearShare();
     });
+    $('share-back').addEventListener('click', () => $('share-dialog').close());
+    $('share-save').addEventListener('click', save);
+    $('share-go').addEventListener('click', () => share(shareMode));
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
   window.ShareImage = { make: (layout = 'classic') => (LAYOUTS[layout] || makeImage)(), layouts: Object.keys(LAYOUTS) };
