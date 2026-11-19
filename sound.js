@@ -181,6 +181,7 @@
       if (gone.length) Sound.shards(gone.length, at);
       if (gone.some((f) => f.by === 'go')) sample('go', { at, gain: 0.8 });
       if (gone.some((f) => f.by === 'mine')) sample('thunder', { at, gain: 0.7 });
+      if (list.some((f) => f.kind === 'boom')) sample('bomb', { at, gain: 1 });
       if (list.some((f) => f.kind === 'placed' && f.by === 'grow')) sample('small', { at, gain: 0.6, rate: wobble(1.2, 0.04) });
       if (kinds.has('flipped')) Sound.flip(at);
     },
@@ -276,7 +277,7 @@
   };
   // 能力 → 音（形の組み合わせと同じ割り当て）
   const ABILITY_SOUND = {
-    nuke: ['fire', { pw: 1.7 }], bomb: ['fire', { pw: 1 }], rowBomb: ['fire', { pw: 0.8 }], colBomb: ['fire', { pw: 0.8 }], diagBomb: ['fire', { pw: 0.8 }],
+    nuke: ['fire', { pw: 1.7 }], timeBomb: ['fire', { pw: 0.5 }], bomb: ['fire', { pw: 1 }], rowBomb: ['fire', { pw: 0.8 }], colBomb: ['fire', { pw: 0.8 }], diagBomb: ['fire', { pw: 0.8 }],
     push: ['wind', {}], suck: ['vortex', { contract: true }], spin: ['vortex', { contract: false }], spinBack: ['vortex', { contract: false }],
     gravity: ['gravity', { dir: 1 }], antigravity: ['gravity', { dir: -1 }],
     go: ['earth', { pw: 0.6 }], wall: ['earth', { pw: 0.8 }], weight: ['earth', { pw: 1.2 }], shield: ['earth', { pw: 0.5 }],
@@ -287,7 +288,7 @@
   };
   // 録音の素材がある超能力は、それを鳴らす。ないものは合成の音に、木の「コッ」を重ねる
   const ABILITY_SAMPLE = {
-    bomb: ['bomb', 1], rowBomb: ['bomb', 0.8], colBomb: ['bomb', 0.8], diagBomb: ['bomb', 0.85], nuke: ['nuke', 1],
+    timeBomb: ['small', 0.8], bomb: ['bomb', 1], rowBomb: ['bomb', 0.8], colBomb: ['bomb', 0.8], diagBomb: ['bomb', 0.85], nuke: ['nuke', 1],
     spin: ['vortex', 0.6], spinBack: ['vortex', 0.6], suck: ['vortex', 0.6],
     mine: ['thunder', 0.8], chain: ['thunder', 0.9], flag: ['light', 0.9],
     push: ['push', 1], gravity: ['gravity', 0.9], antigravity: ['antigravity', 0.8], go: ['go', 1], weight: ['weight', 1],

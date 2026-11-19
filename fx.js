@@ -38,7 +38,7 @@
     invert: { name: '反転', tint: '#e8e6e1', c: ['#1f1d1a', '#8a847c', '#ffffff'], smoke: ['#2a2622', '#e8e6e1'] },
   };
   const ELEMENT_OF = {
-    nuke: 'fire', bomb: 'fire', rowBomb: 'fire', colBomb: 'fire', diagBomb: 'fire',
+    nuke: 'fire', timeBomb: 'fire', bomb: 'fire', rowBomb: 'fire', colBomb: 'fire', diagBomb: 'fire',
     push: 'wind',
     suck: 'vortex', spin: 'vortex', spinBack: 'vortex',
     gravity: 'gravity', antigravity: 'gravity',
@@ -434,6 +434,8 @@
   // 碁石ごとの衝撃の組み合わせ。shake は盤の揺れの強さ（効果が大きいほど強く）
   const RECIPE = {
     bomb: { el: 'fire', impact: (e, x, y, s) => IMPACT.fire(e, x, y, s, { pw: 1 }), shake: 1.1 },
+    // 時限爆弾：置いたときは小さく火花が散るだけ（爆発は2手あと）
+    timeBomb: { el: 'fire', impact: (e, x, y, s) => { P.ring(e, x, y, s, { col: ELEMENTS.fire.c[1], wid: 0.1, far: 1.1, dur: 0.35 }); P.dots(e, x, y, s, { n: 5, cols: ELEMENTS.fire.c }); }, shake: 0.15 },
     // 核：爆弾の倍の大きさ。白い閃光の輪が2重に広がり、遅れてもう一度ふくらむ
     nuke: { el: 'fire', impact: (e, x, y, s) => {
       IMPACT.fire(e, x, y, s, { pw: 1.9 });
@@ -531,7 +533,11 @@
       const [ox, oy] = o.origin ? t.map(o.origin[0], o.origin[1]) : [0, 0];
       for (const f of list) {
         const [px, py] = t.map(f.x, f.y);
-        if (f.kind === 'gone') {
+        if (f.kind === 'boom') {
+          // 時限爆弾の爆発：爆弾と同じ炎と揺れ
+          IMPACT.fire(e, px, py, s, { pw: 1 });
+          if (t.shakeEl) FX.shake(t.shakeEl, 1.1);
+        } else if (f.kind === 'gone') {
           const ux = px - ox, uy = py - oy, d = Math.hypot(ux, uy) || 1;
           P.shards(e, px, py, s, f.color || 'b', { ux: o.origin ? ux / d : 0, uy: o.origin ? uy / d : -1 });
           if (f.by === 'go') { P.ring(e, px, py, s, { col: ELEMENTS.earth.c[1], wid: 0.14, far: 0.4, near: 1.2, inward: true, split: 4, dur: 0.4 }); P.rocks(e, px, py, s, ELEMENTS.earth.c, { n: 4 }); }

@@ -36,6 +36,7 @@ const ICONS = {
   spinBack: '<path d="M5 12a7 7 0 1 0 2.1-5"/><path d="M4.5 3.5v4h4"/>',
   push: '<path d="M12 8V3M9.5 5.5 12 3l2.5 2.5M12 16v5M9.5 18.5 12 21l2.5-2.5M8 12H3M5.5 9.5 3 12l2.5 2.5M16 12h5M18.5 9.5 21 12l-2.5 2.5"/>',
   suck: '<path d="M12 3v5M9.5 5.5 12 8l2.5-2.5M12 21v-5M9.5 18.5 12 16l2.5 2.5M3 12h5M5.5 9.5 8 12l-2.5 2.5M21 12h-5M18.5 9.5 16 12l2.5 2.5"/>',
+  timeBomb: '<circle cx="11" cy="14" r="6.5"/><path d="M15.5 9.5l2-2M17.5 7.5c.5-1.5 1.8-2.6 3.3-2.8"/><path d="M11 11v3l2 1.5"/>',
   bomb: '<path d="M12 2.5v5M12 16.5v5M2.5 12h5M16.5 12h5M5.3 5.3l3.5 3.5M15.2 15.2l3.5 3.5M5.3 18.7l3.5-3.5M15.2 8.8l3.5-3.5"/>',
   rowBomb: '<path d="M2.5 12h19M5.5 8.5v7M18.5 8.5v7"/><circle cx="12" cy="12" r="2.6" fill="currentColor"/>',
   colBomb: '<path d="M12 2.5v19M8.5 5.5h7M8.5 18.5h7"/><circle cx="12" cy="12" r="2.6" fill="currentColor"/>',
@@ -76,6 +77,7 @@ const ABILITIES = {
   push: { name: '押し出し', desc: 'まわりの石を1マス外へ押す。盤から落ちた石は消える', onPlace: pushAbility, area: 'ring' },
   suck: { name: '吸い込み', desc: '2マス先の石を1マス手前まで吸い寄せる', onPlace: suckAbility, area: 'ring2' },
   nuke: { name: '核', desc: 'まわり5×5の石を全部消す', onPlace: nukeAbility, area: 'sq5' },
+  timeBomb: { name: '時限爆弾', desc: '2手あとに爆発して、まわりの石と一緒に消える', area: 'ring' },
   bomb: { name: '爆弾', desc: 'まわりの石を全部消す', onPlace: bombAbility, area: 'ring' },
   rowBomb: { name: '横爆弾', desc: '左右2マスずつの石を消す', onPlace: (b, x, y) => lineBomb(b, x, y, [[1, 0]]), area: 'row' },
   colBomb: { name: '縦爆弾', desc: '上下2マスずつの石を消す', onPlace: (b, x, y) => lineBomb(b, x, y, [[0, 1]]), area: 'col' },
@@ -162,6 +164,29 @@ function nukeAbility(board, x, y) {
   const fx = [];
   for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
     if ((dx || dy) && inside(x + dx, y + dy)) removeStone(board, fx, x + dx, y + dy);
+  }
+  return fx;
+}
+
+// 時限爆弾：置いてから2手（相手の1手と自分の1手）たつと爆発する。まわり8マスの石と自分が消える
+const FUSE = 2;
+function fuseTick(board, skipUid) {
+  const fx = [];
+  const lit = [];
+  for (let y = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++) {
+    const p = board[y][x];
+    if (p && p.ability === 'timeBomb' && p.uid !== skipUid) lit.push([x, y, p]);
+  }
+  for (const [x, y, p] of lit) {
+    p.fuse = (p.fuse == null ? FUSE : p.fuse) - 1;
+    if (p.fuse > 0) continue;
+    if (board[y][x] !== p) continue; // ほかの爆発で、もう消えている
+    fx.push({ kind: 'boom', x, y });
+    const gone = [];
+    for (const [dx, dy] of DIRS8) if (inside(x + dx, y + dy)) removeStone(board, gone, x + dx, y + dy);
+    removeStone(board, gone, x, y);
+    for (const f of gone) f.by = 'timeBomb';
+    fx.push(...gone);
   }
   return fx;
 }
@@ -466,7 +491,7 @@ const MAX_COPIES = 3; // 同じ超能力は3つまで
 const COST = {
   plain: 1,
   gravity: 2, antigravity: 2, mine: 2, jam: 2, go: 2, weight: 2, shield: 2, wall: 2, joker: 2, push: 2,
-  bomb: 3, rowBomb: 3, colBomb: 3, spin: 3, spinBack: 3, clone: 3, cloneH: 3, cloneV: 3, seal: 3, suck: 3, flag: 3,
+  bomb: 3, timeBomb: 3, rowBomb: 3, colBomb: 3, spin: 3, spinBack: 3, clone: 3, cloneH: 3, cloneV: 3, seal: 3, suck: 3, flag: 3,
   diagBomb: 4, takeover: 4, grow: 4, chain: 4,
   othello: 5, nuke: 6,
   spy: 3, // リーチがあると置けないので、安くした
@@ -587,7 +612,8 @@ const snapshot = (board) => board.map((row) => row.map((c) => c && { ...c }));
 // st は対局の状態（封印・おじゃまが相手の手札を見るため）。お試しでは手札のない仮の状態を渡す
 function resolvePlacement(board, x, y, color, id, st) {
   const ab = ABILITIES[id];
-  const piece = id === 'spy' ? newPiece(other(color), 'spy', st, { owner: color }) : newPiece(color, id, st);
+  const piece = id === 'spy' ? newPiece(other(color), 'spy', st, { owner: color })
+    : id === 'timeBomb' ? newPiece(color, id, st, { fuse: FUSE }) : newPiece(color, id, st);
   board[y][x] = piece;
   const before = snapshot(board); // 置いた直後、効果が起きる前（予兆を見せるため）
   const fx0 = ab.onPlace ? ab.onPlace(board, x, y, color, st) : [];
@@ -595,6 +621,9 @@ function resolvePlacement(board, x, y, color, id, st) {
   const allFx = fx0.slice();
   const grown = growth(board, color, st);
   if (grown.length) { steps.push({ board: snapshot(board), fx: grown }); allFx.push(...grown); }
+  // 時限爆弾の導火線が1つ縮む。0になったものは爆発する（いま置いた時限爆弾は数えない）
+  const boomed = fuseTick(board, piece.uid);
+  if (boomed.length) { steps.push({ board: snapshot(board), fx: boomed }); allFx.push(...boomed); }
   // 地雷は、置いた石と、分身・増殖で増えた石の両方に反応する
   const newUids = [piece.uid, ...allFx.filter((f) => f.kind === 'placed').map((f) => board[f.y][f.x] && board[f.y][f.x].uid).filter(Boolean)];
   for (let round = 0; round < MAX_ROUNDS; round++) {
@@ -718,6 +747,10 @@ function iconHTML(ability) {
 // 盤の上の碁石（増殖には、増えるまでのゲージを付ける）
 function pieceHTML(p, extraClass = '', attrs = '') {
   const html = stoneHTML(p.color, p.ability, extraClass, attrs);
+  if (p.ability === 'timeBomb') {
+    const n = p.fuse == null ? FUSE : p.fuse;
+    return html.replace(/<\/span>$/, `<span class="fuse-gauge" data-n="${n}" title="あと${n}手で爆発"><i></i><i></i></span></span>`);
+  }
   if (p.ability !== 'grow') return html;
   const n = (p.age || 0) % 2;
   const gauge = `<span class="grow-gauge" data-n="${n}" title="${n ? '次の自分の番で増える' : 'あと2回の自分の番で増える'}"><i></i><i></i></span>`;
@@ -1280,11 +1313,12 @@ function showStoneTip(x, y) {
   if (old) Demo.stop(old);
   const ab = ABILITIES[p.ability] || ABILITIES.plain;
   const owner = p.color === 'n' ? '誰のものでもない' : `${nameOf(p.owner || p.color)}の碁石`;
+  const fuseNote = p.ability === 'timeBomb' ? `（あと${p.fuse == null ? FUSE : p.fuse}手で爆発）` : '';
   const desc = p.ability === 'plain' ? '超能力のない、ふつうの碁石'
     : p.ability === 'block' ? '石垣が立てた、誰のものでもない石。どの列にも入らない'
     : ab.desc;
   const showDemo = Demo.has(p.ability);
-  tip.innerHTML = `${showDemo ? '<span class="tip-demo mini"></span>' : ''}<b>${ab.name}</b><span class="tip-owner">${owner}</span>${desc}`;
+  tip.innerHTML = `${showDemo ? '<span class="tip-demo mini"></span>' : ''}<b>${ab.name}</b><span class="tip-owner">${owner}${fuseNote}</span>${desc}`;
   tip.hidden = false;
   // 碁石の上に出す。上に場所がなければ下に。左右は画面からはみ出さないように
   const r = cellEl.getBoundingClientRect();
