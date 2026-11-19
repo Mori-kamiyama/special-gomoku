@@ -554,7 +554,10 @@
           const ux = px - ox, uy = py - oy, d = Math.hypot(ux, uy) || 1;
           P.shards(e, px, py, s, f.color || 'b', { ux: o.origin ? ux / d : 0, uy: o.origin ? uy / d : -1 });
           if (f.by === 'go') { P.ring(e, px, py, s, { col: ELEMENTS.earth.c[1], wid: 0.14, far: 0.4, near: 1.2, inward: true, split: 4, dur: 0.4 }); P.rocks(e, px, py, s, ELEMENTS.earth.c, { n: 4 }); }
-          if (f.by === 'mine') IMPACT.thunder(e, px, py, s, { bolts: 3 });
+          if (f.by === 'mine') {
+            const [mx, my] = t.map(f.fromX, f.fromY);
+            IMPACT.thunder(e, mx, my, s, { bolts: 3 });
+          }
           if (f.by === 'sniper') { P.ring(e, px, py, s, { col: ELEMENTS.fire.c[0], wid: 0.1, far: 0.3, near: 1.2, inward: true, split: 4, dur: 0.25 }); }
         } else if (f.kind === 'neutralized') {
           // おじゃま：超能力が抜ける（紫の弧が閉じて、ぽんと消える）
