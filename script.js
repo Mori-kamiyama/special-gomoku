@@ -84,7 +84,7 @@ const ABILITIES = {
   joker: { name: 'ジョーカー', desc: '白にも黒にもなる。相手の列にも入る' },
   push: { name: '押し出し', desc: 'まわりの石を1マス外へ押す。盤から落ちた石は消える', onPlace: pushAbility, area: 'ring' },
   suck: { name: '吸い込み', desc: '2マス先の石を1マス手前まで吸い寄せる', onPlace: suckAbility, area: 'ring2' },
-  nuke: { name: '核', desc: 'まわり5×5の石を全部消す', onPlace: nukeAbility, area: 'sq5' },
+  nuke: { name: '核', desc: 'まわり5×5の石を消す。置いた石と盾は残る', onPlace: nukeAbility, area: 'sq5' },
   timeBomb: { name: '時限爆弾', desc: '2手あとに爆発して、まわりの石と一緒に消える', area: 'ring' },
   bomb: { name: '爆弾', desc: 'まわりの石を全部消す', onPlace: bombAbility, area: 'ring' },
   rowBomb: { name: '横爆弾', desc: '左右2マスずつの石を消す', onPlace: (b, x, y) => lineBomb(b, x, y, [[1, 0]]), area: 'row' },
@@ -106,7 +106,7 @@ const ABILITIES = {
   swapHands: { name: '交換', desc: '自分と相手の手札を、そっくり入れ替える', onPlace: (b, x, y, c, st) => swapHandsAbility(st) },
   fastForward: { name: '早送り', desc: '盤の時限爆弾と増殖を、2手ぶん進める', onPlace: (b, x, y, c, st) => fastForwardAbility(b, st), area: 'timers' },
   warp: { name: 'ワープ', desc: 'まわり3×3の石を、盤の真ん中をはさんだ反対側へ飛ばす。飛んだ先の石は消える', onPlace: warpAbility, area: 'warp' },
-  sniper: { name: 'スナイパー', desc: '置いたあと、盤のどこかの石を1つ選んで消す', onPlace: sniperAbility, aim: true },
+  sniper: { name: 'スナイパー', desc: '置いたあと、盤の石を1つ選んで消す。盾は狙えない', onPlace: sniperAbility, aim: true },
   clone: { name: '分身', desc: '盤の真ん中をはさんだ反対側にも、自分の石が1つ増える', onPlace: (b, x, y, c, st) => cloneAt(b, SIZE - 1 - x, SIZE - 1 - y, c, st), area: 'mirror' },
   cloneH: { name: '左右分身', desc: '左右に折り返した位置にも、自分の石が1つ増える', onPlace: (b, x, y, c, st) => cloneAt(b, SIZE - 1 - x, y, c, st), area: 'mirrorH' },
   cloneV: { name: '上下分身', desc: '上下に折り返した位置にも、自分の石が1つ増える', onPlace: (b, x, y, c, st) => cloneAt(b, x, SIZE - 1 - y, c, st), area: 'mirrorV' },
@@ -117,7 +117,7 @@ const ABILITIES = {
   spy: { name: 'スパイ', desc: '相手の色で置く。この石を含む列が揃ったら、こっちの勝ち。相手があと1つで揃う場所には置けない' },
   mine: { name: '地雷', desc: 'まわり8マスに相手が石を置いたら、その石を消す。反応した地雷はただの石になる', area: 'ring' },
   weight: { name: '重し', desc: '押し出し・吸い込み・回転で動かされない' },
-  shield: { name: '盾', desc: '爆弾・囲碁・地雷・乗っ取りで消されない' },
+  shield: { name: '盾', desc: 'スナイパー・核・爆弾・囲碁・地雷・乗っ取りで消されない' },
 };
 const HIDDEN_IDS = ['plain', 'block'];
 const SPECIAL_IDS = Object.keys(ABILITIES).filter((id) => !HIDDEN_IDS.includes(id));
@@ -175,7 +175,7 @@ function bombAbility(board, x, y) {
   return fx;
 }
 
-// 核：まわり5×5の石を全部消す。置いた碁石は残る
+// 核：まわり5×5の石を消す。置いた碁石と盾は残る
 function nukeAbility(board, x, y) {
   const fx = [];
   for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
@@ -257,7 +257,7 @@ function warpAbility(board, x, y) {
 function sniperAbility(board, x, y, color, st) {
   const fx = [];
   const t = st && st.target;
-  if (t && inside(t[0], t[1]) && !(t[0] === x && t[1] === y)) removeStone(board, fx, t[0], t[1]);
+  if (t && canSnipe(board, t[0], t[1], x, y)) removeStone(board, fx, t[0], t[1]);
   for (const f of fx) f.by = 'sniper';
   return fx;
 }
@@ -584,7 +584,7 @@ function shuffle(arr) {
 // ===== デッキ =====
 // 24ポイントまで組める。ただの石は1ポイント。強い碁石ほど高い（数と強さのトレードオフ）
 // 碁石の追加・削除、コスト・能力・対局ルールの変更時に上げる。UI の変更では上げない。
-const RULES_VERSION = 5;
+const RULES_VERSION = 6;
 const DECK_POINTS = 24;
 const MAX_COPIES = 3; // 同じ超能力は3つまで
 const COST = {
@@ -592,8 +592,8 @@ const COST = {
   gravity: 2, antigravity: 2, mine: 2, jam: 2, go: 2, weight: 2, shield: 2, wall: 2, joker: 2, push: 2,
   mystery: 2, fastForward: 2,
   timeBomb: 3, warp: 3, swapHands: 3, rowBomb: 3, colBomb: 3, spin: 3, spinBack: 3, clone: 3, cloneH: 3, cloneV: 3, seal: 3, suck: 3, flag: 3,
-  bomb: 4, diagBomb: 4, sniper: 4, takeover: 4, grow: 4,
-  chain: 5, othello: 5, cataclysm: 5, flipAround: 5, nuke: 6,
+  bomb: 4, diagBomb: 4, takeover: 4, grow: 4,
+  sniper: 5, chain: 5, othello: 5, cataclysm: 5, flipAround: 5, nuke: 6,
   revolution: 8,
   spy: 3, // リーチがあると置けないので、安くした
 };
