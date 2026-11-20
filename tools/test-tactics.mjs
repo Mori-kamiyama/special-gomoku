@@ -92,12 +92,9 @@ assert.equal(rank().find(({ move }) => move.x === 7 && move.y === 5).score, -1);
 console.log('Passed open-three, blast, straight and gapped four, flag, mine, shield, joker, spy and own-win scenarios.');
 
 const { default: CNN } = await import('../cnn.js');
-const { default: AVI } = await import('../avi.js');
 const { default: Spatial } = await import('../spatial.js');
 const { default: modelPayload } = await import('../models/cnn-practice.js');
-const { default: aviPayload } = await import('./avi-weights-10min.json', { with: { type: 'json' } });
 const model = CNN.evaluator(modelPayload);
-const weights = AVI.modelWeights(aviPayload);
 
 function withSearchSeed(run) {
   const random = Math.random;
@@ -114,9 +111,7 @@ const draws = original.players.b.bag.map(card => card.ability);
 assert.notDeepEqual(draws, reversed.players.b.bag.map(card => card.ability));
 for (const choose of [
   () => AI.chooseMove(),
-  () => AVI.chooseMove(weights),
-  () => CNN.chooseMove(model, { plies: 2, rolloutValue: st => AVI.predict(weights, AVI.outcome(st, st.turn)) }),
-  () => CNN.chooseMove(model, { plies: 2, coverHand: true, rolloutValue: st => AVI.predict(weights, AVI.outcome(st, st.turn)) }),
+  () => CNN.attentionMove(model),
 ]) {
   AI.restore(original);
   const first = withSearchSeed(choose);
@@ -126,19 +121,18 @@ for (const choose of [
   assert.deepEqual(AI.save(), reversed);
 }
 
-function simulatedDraw(snapshot, knownBag) {
+function simulatedDraw(snapshot) {
   AI.restore(snapshot);
   return withSearchSeed(() => AI.onePlyOutcomes(
     st => st.players.b.hand.at(-1).ability, 0, 2,
-    [{ i: 0, x: 5, y: 5 }], { knownBag },
+    [{ i: 0, x: 5, y: 5 }],
   )[0].outcomes);
 }
-assert.deepEqual(simulatedDraw(original, false), simulatedDraw(reversed, false));
-assert.notDeepEqual(simulatedDraw(original, true), simulatedDraw(reversed, true));
+assert.deepEqual(simulatedDraw(original), simulatedDraw(reversed));
 
 function playMystery(afterSearch) {
   setup([], ['mystery'], ['plain']);
-  if (afterSearch) withSearchSeed(() => CNN.chooseMove(model, { plies: 3 }));
+  if (afterSearch) withSearchSeed(() => CNN.attentionMove(model));
   const result = AI.apply({ i: 0, x: 5, y: 5 });
   return [result.rolled, state.players.b.hand.map(card => card.ability)];
 }

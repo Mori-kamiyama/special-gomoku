@@ -111,13 +111,13 @@
     return [...new Map(moves.map(m => [[m.i, m.x, m.y, ...(m.target ?? [])].join(','), m])).values()];
   }
 
-  function immediateWins(attack, options) {
+  function immediateWins(attack) {
     if (!attack.finish.length) return 0;
     const st = G.state;
     const mover = st.turn;
     const replies = [];
     addMoves(replies, attack.finish, attack.stones);
-    return AI.onePlyOutcomes(s => s.phase === 'end' && s.winner === mover, 0, 4, replies, options)
+    return AI.onePlyOutcomes(s => s.phase === 'end' && s.winner === mover, 0, 4, replies)
       .filter(({ outcomes }) => outcomes.some(Boolean)).length;
   }
 
@@ -126,7 +126,7 @@
       : score - 100 * Number(danger > 0) - 0.1 * danger - 2 * threes - 2 * poison;
   }
 
-  function rank(evaluate, cells = 14, options) {
+  function rank(evaluate, cells = 14) {
     const me = G.state.turn;
     const enemy = G.other(me);
     const ours = threats(G.state.board, me);
@@ -139,9 +139,9 @@
       const finish = defense.poisonedFinish.length
         ? [...new Map([...attack.finish, ...defense.poisonedFinish].map(p => [key(...p), p])).values()]
         : attack.finish;
-      const danger = st.turn === enemy ? immediateWins({ ...attack, finish }, options) : 0;
+      const danger = st.turn === enemy ? immediateWins({ ...attack, finish }) : 0;
       return { score: evaluate(st) * (st.turn === me ? 1 : -1), danger, threes: attack.threes, poison: defense.poison };
-    }, cells, 4, moves, options);
+    }, cells, 4, moves);
     return tried.map(({ move, outcomes }) => {
       const average = field => outcomes.reduce((sum, o) => sum + o[field], 0) / outcomes.length;
       const score = average('score');

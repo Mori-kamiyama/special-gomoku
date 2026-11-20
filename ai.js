@@ -227,7 +227,7 @@
   }
 
   // 各候補手の結果を採点する。はてなは同じ手を複数回試す。
-  function onePlyOutcomes(score, cells = 14, samples = 4, moves = genMoves(cells), { knownBag = false } = {}) {
+  function onePlyOutcomes(score, cells = 14, samples = 4, moves = genMoves(cells)) {
     const base = save();
     const logs = G.state.logs;
     const fx = G.state.fx;
@@ -235,8 +235,7 @@
       return G.withSimulationRandom(() => {
         const uncertainDraw = Object.values(base.players).some(({ bag }) =>
           bag.some(card => card.ability !== bag[0].ability));
-        const worlds = knownBag ? [base]
-          : Array.from({ length: uncertainDraw ? Math.min(samples, 2) : 1 }, () => sampleWorld(base));
+        const worlds = Array.from({ length: uncertainDraw ? Math.min(samples, 2) : 1 }, () => sampleWorld(base));
         return moves.flatMap((m) => {
           restore(base);
           const count = G.effectiveAbility(base.players[base.turn].hand[m.i], base.turn) === 'mystery' ? samples : worlds.length;
