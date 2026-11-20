@@ -21,7 +21,7 @@ const MAX_MOVES = 200;
 function runGames(count, depth) {
   const g = require(join(here, '..', 'script.js'));
   const AI = require(join(here, '..', 'ai.js'));
-  const { state, SPECIAL_IDS, newBoard, makePlayer, playMove, costOf, DECK_POINTS, MAX_COPIES } = g;
+  const { state, SPECIAL_IDS, newBoard, makePlayer, playMove, costOf, DECK_POINTS, deckAddError } = g;
   const stats = Object.fromEntries(SPECIAL_IDS.map((id) => [id, { games: 0, wins: 0, draws: 0, used: 0 }]));
   const total = { b: 0, w: 0, draw: 0, moves: 0, games: 0 };
   // デッキはランダムに組む（24ポイントまで。半分くらいの確率でただの石を足す）
@@ -30,7 +30,7 @@ function runGames(count, depth) {
     let pts = 0;
     for (let tries = 0; tries < 200 && pts < DECK_POINTS; tries++) {
       const id = Math.random() < 0.45 ? 'plain' : SPECIAL_IDS[Math.floor(Math.random() * SPECIAL_IDS.length)];
-      if ((deck[id] || 0) >= (id === 'plain' ? 99 : MAX_COPIES) || pts + costOf(id) > DECK_POINTS) continue;
+      if (deckAddError(id, deck[id] || 0, DECK_POINTS - pts)) continue;
       deck[id] = (deck[id] || 0) + 1;
       pts += costOf(id);
     }

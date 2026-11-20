@@ -581,34 +581,11 @@ function shuffle(arr) {
   return a;
 }
 
-// ===== デッキ =====
-// 24ポイントまで組める。ただの石は1ポイント。強い碁石ほど高い（数と強さのトレードオフ）
-// 碁石の追加・削除、コスト・能力・対局ルールの変更時に上げる。UI の変更では上げない。
-const RULES_VERSION = 6;
-const DECK_POINTS = 24;
-const MAX_COPIES = 3; // 同じ超能力は3つまで
-const COST = {
-  plain: 1,
-  gravity: 2, antigravity: 2, mine: 2, jam: 2, go: 2, weight: 2, shield: 2, wall: 2, joker: 2, push: 2,
-  mystery: 2, fastForward: 2,
-  timeBomb: 3, warp: 3, swapHands: 3, rowBomb: 3, colBomb: 3, spin: 3, spinBack: 3, clone: 3, cloneH: 3, cloneV: 3, seal: 3, suck: 3, flag: 3,
-  bomb: 4, diagBomb: 4, takeover: 4, grow: 4,
-  sniper: 5, chain: 5, othello: 5, cataclysm: 5, flipAround: 5, nuke: 6,
-  revolution: 8,
-  spy: 3, // リーチがあると置けないので、安くした
-};
-const costOf = (id) => COST[id] || 3;
-// デッキは { 能力: 数 }。ただの石も含む
-const deckPoints = (deck) => Object.entries(deck).reduce((s, [id, n]) => s + costOf(id) * n, 0);
-const deckCount = (deck) => Object.values(deck).reduce((s, n) => s + n, 0);
-// 名前の順に並べる（オンラインで両方の画面が同じ袋を作れるように）
-const deckList = (deck) => Object.keys(deck).sort().flatMap((id) => Array(deck[id]).fill(id));
-const STARTERS = [
-  { id: 'balance', name: 'バランス', note: 'いろいろ少しずつ', deck: { plain: 7, bomb: 1, spin: 1, grow: 1, seal: 1, clone: 1 } },
-  { id: 'mass', name: '物量', note: '数で押す', deck: { plain: 14, gravity: 2, mine: 2, shield: 1 } },
-  { id: 'sourspy', name: 'すっぱいスパイ', note: '相手の列にまぎれこむ', deck: { plain: 5, joker: 3, bomb: 1, spy: 3 } },
-  { id: 'nuclear', name: '一発逆転', note: '核が2つ', deck: { plain: 12, nuke: 2 } },
-];
+const {
+  RULES_VERSION, DECK_POINTS, MAX_COPIES, COST, STARTERS, CATALOG,
+  costOf, deckPoints, deckCount, deckList, deckError, deckAddError, deckVersionNote,
+  encodeDeckCode, decodeDeckCode, sanitizeDeck,
+} = (typeof module !== 'undefined' ? require('./deck.js') : createDeckRules)(SPECIAL_IDS);
 
 function makePlayer(color, deck) {
   const list = Array.isArray(deck) ? deck.map((c) => (typeof c === 'string' ? makeCard(c) : c)) : deckList(deck).map(makeCard);
@@ -888,56 +865,6 @@ const ICON_COPY = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" strok
 const escapeHTML = (t) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const CHOICE_KEY = 'gomoku-choice';
 const TIER = { 1: 't1', 2: 't2', 3: 't3', 4: 't4', 5: 't5', 6: 't6', 8: 't6' }; // ポイントの色分け
-const CATALOG = ['plain', ...SPECIAL_IDS].sort((x, y) => costOf(x) - costOf(y));
-const DECK_CODE_PREFIX = 'GOMOKU1.'; // デッキコードの形式。ルールの版とは別
-const DECK_CODE_MAX_LENGTH = 2048;
-
-function deckError(deck) {
-    if (!deck || typeof deck !== 'object' || Array.isArray(deck) || !Object.keys(deck).length) {
-        return 'デッキに碁石が入っていません。';
-    }
-    for (const [id, count] of Object.entries(deck)) {
-        if (!CATALOG.includes(id)) return '今のルールにない碁石が入っています。';
-        if (!Number.isSafeInteger(count) || count < 1) return '碁石の数が正しくありません。';
-        if (id !== 'plain' && count > MAX_COPIES) return `同じ超能力は${MAX_COPIES}個まで入れられます。`;
-    }
-    if (deckPoints(deck) > DECK_POINTS) return `${DECK_POINTS}ポイントを超えています。`;
-    return '';
-}
-
-function encodeDeckCode({ name, version, deck }) {
-    const bytes = new TextEncoder().encode(JSON.stringify({ name, version, deck }));
-    return DECK_CODE_PREFIX + btoa(String.fromCharCode(...bytes));
-}
-
-function decodeDeckCode(text) {
-    const invalid = 'デッキコードを読み取れません。コード全体を貼り付けてください。';
-    const code = text.trim();
-    if (!code.startsWith(DECK_CODE_PREFIX) || code.length > DECK_CODE_MAX_LENGTH) throw new Error(invalid);
-
-    let data;
-    try {
-        const bytes = Uint8Array.from(atob(code.slice(DECK_CODE_PREFIX.length)), (c) => c.charCodeAt(0));
-        data = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
-    } catch {
-        throw new Error(invalid);
-    }
-    if (!data || typeof data.name !== 'string' ||
-        (data.version !== null && (!Number.isSafeInteger(data.version) || data.version < 1))) {
-        throw new Error(invalid);
-    }
-    if (data.version > RULES_VERSION) throw new Error('新しいルールのデッキです。ゲームを更新してから読み込んでください。');
-    const error = deckError(data.deck);
-    if (error) throw new Error([deckVersionNote(data.version), error].filter(Boolean).join('。'));
-    return { name: data.name.trim().slice(0, 16) || '共有デッキ', version: data.version, deck: data.deck };
-}
-
-function deckVersionNote(version) {
-    if (version === null) return 'ルールの版が不明';
-    if (version < RULES_VERSION) return `旧ルール v${version}`;
-    if (version > RULES_VERSION) return `新ルール v${version}`;
-    return '';
-}
 
 // 旧コストで組んだデッキは、先にただの石を減らして予算に収める
 function adjustBombCost(deck) {
@@ -1359,9 +1286,8 @@ function renderDeck(full = false) {
   }
   $('deck-catalog').querySelectorAll('.dk-tile').forEach((el) => {
     const id = el.dataset.id, n = deck[id] || 0;
-    const max = id === 'plain' ? Infinity : MAX_COPIES;
     el.classList.toggle('is-in', n > 0);
-    el.classList.toggle('is-off', n >= max || costOf(id) > left);
+    el.classList.toggle('is-off', !!deckAddError(id, n, left));
     el.querySelector('.dk-n').textContent = n;
     el.querySelector('.dk-count').textContent = n ? `×${n}` : '';
   });
@@ -1416,7 +1342,7 @@ function renderDeckInfo() {
   const desc = id === 'plain' ? '超能力のない、ふつうの碁石' : ab.desc;
   if (compactDeck.matches) {
     const count = state.edit[id] || 0;
-    const canAdd = deckPoints(state.edit) + costOf(id) <= DECK_POINTS && (id === 'plain' || count < MAX_COPIES);
+    const canAdd = !deckAddError(id, count, DECK_POINTS - deckPoints(state.edit));
     el.innerHTML = `<div class="deck-info-title">
         ${stoneHTML(deckColor(), id)}
         <b>${ab.name}</b><span class="dk-coin ${TIER[costOf(id)]}">${costOf(id)}</span>
@@ -1438,9 +1364,8 @@ function changeDeck(id, d, tileEl) {
   const deck = state.edit;
   const n = deck[id] || 0;
   if (d > 0) {
-    const max = id === 'plain' ? Infinity : MAX_COPIES;
-    if (n >= max || deckPoints(deck) + costOf(id) > DECK_POINTS) {
-      const why = n >= max ? '同じ碁石は3つまで' : 'ポイントが足りない';
+    const why = deckAddError(id, n, DECK_POINTS - deckPoints(deck));
+    if (why) {
       bump(tileEl, why);
       return;
     }
@@ -2118,19 +2043,6 @@ function beginOnline(seed, myColor, current) {
   });
 }
 
-// 相手から届いたデッキを、決まりの中に収める（知らない碁石・多すぎる数・ポイントの超過を落とす）
-function sanitizeDeck(deck) {
-  const out = {};
-  let pts = 0;
-  for (const id of CATALOG) {
-    let n = Math.max(0, Math.floor(Number(deck && deck[id]) || 0));
-    if (id !== 'plain') n = Math.min(n, MAX_COPIES);
-    while (n > 0 && pts + costOf(id) * n > DECK_POINTS) n--;
-    if (n) { out[id] = n; pts += costOf(id) * n; }
-  }
-  return deckCount(out) ? out : { plain: DECK_POINTS };
-}
-
 // 左上の名前を押すと、タイトルに戻る。対局の途中なら、確かめてから
 function backToTitle(force = false) {
   if (state.phase === 'title') return;
@@ -2307,7 +2219,7 @@ if (typeof document !== 'undefined') {
 }
 if (typeof module !== 'undefined') {
   module.exports = {
-    RULES_VERSION, encodeDeckCode, decodeDeckCode,
+    RULES_VERSION, encodeDeckCode, decodeDeckCode, deckAddError,
     setSeed, SIZE, ABILITIES, ICONS, SPECIAL_IDS, LINE_DIRS,
     findWin, specialWin, lineOwner, countsFor, growth, newBoard, newPiece, playMove, resolvePlacement, snapshot, areaCells, settle, goTraps, mineCheck,
     state, makePlayer, STARTERS, COST, DECK_POINTS, MAX_COPIES, costOf, deckPoints, deckCount, deckList, hasReach, cardBlocked, spyCompletes, canSnipe, pushColumn, makeCard, effectiveAbility, canPlaceAt, inside, other, shuffle,
