@@ -1439,7 +1439,6 @@ body[data-screen="title"] main { padding-bottom: 0; }
   color: var(--text);
   font: inherit;
 }
-#cpu-depth { flex: 0 0 5em; width: 5em; }
 /* 名前の欄は、ボタンのすぐ上に、ボタンと同じ幅で置く */
 .select-foot { flex-direction: column; align-items: center; gap: 10px; }
 .name-field { width: min(100%, 420px); justify-content: center; }

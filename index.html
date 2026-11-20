@@ -74,16 +74,10 @@
         <label id="cpu-policy-field" class="name-field" hidden>
           <span>CPU</span>
           <select id="cpu-policy">
-            <option value="cnn-practice">追加学習Attention（最大2着手）</option>
-            <option value="cnn">Attention学習AI（最大2着手）</option>
-            <option value="cnn-experiment">実験用（山札順あり）</option>
-            <option value="avi">旧世代の学習AI（1手読み）</option>
-            <option value="minimax">従来CPU（2手読み）</option>
+            <option value="minimax">従来</option>
+            <option value="attention-1">Attention（1手読み）</option>
+            <option value="attention-2" selected>Attention（2手読み）</option>
           </select>
-        </label>
-        <label id="cpu-depth-field" class="name-field" hidden>
-          <span>探索の深さ（着手）</span>
-          <input id="cpu-depth" type="number" value="8" min="1" max="48" step="1" required disabled>
         </label>
         <label id="name-field" class="name-field" hidden>
           <span>ユーザー名</span>
@@ -228,7 +222,6 @@
   <script src="avi-model.js"></script>
   <script src="tactics.js"></script>
   <script src="cnn.js"></script>
-  <script src="models/cnn-attention.js"></script>
   <script src="models/cnn-practice.js"></script>
 </body>
 </html>

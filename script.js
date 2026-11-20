@@ -619,8 +619,7 @@ const piecesLeft = (p) => p.hand.length + p.bag.length;
 const state = {
   phase: 'title', // title | deck | online | play | end
   mode: 'pvp', // pvp（2人で対戦）| cpu（CPU と対戦）
-  cpuPolicy: 'cnn-practice',
-  cpuDepth: 8,
+  cpuPolicy: 'attention-2',
   board: [],
   decks: { b: null, w: null }, // 対局に使うデッキ（{ 能力: 数 }）
   players: {},
@@ -1116,7 +1115,6 @@ function renderSelect(preserveScroll = false) {
   nameField.hidden = state.mode !== 'cpu' && state.mode !== 'online';
   $('word-field').hidden = state.mode !== 'online';
   $('cpu-policy-field').hidden = state.mode !== 'cpu';
-  updateCpuDepthField();
   const go = $('select-go');
   go.hidden = manage;
   go.textContent = twoCols ? 'この2つで対戦' : state.mode === 'online' ? 'このデッキで相手をさがす' : 'このデッキで対戦';
@@ -1151,12 +1149,6 @@ function onSelectClick(e) {
   }
 }
 
-function updateCpuDepthField() {
-  const visible = state.mode === 'cpu' && $('cpu-policy').value === 'cnn-experiment';
-  $('cpu-depth-field').hidden = !visible;
-  $('cpu-depth').disabled = !visible;
-}
-
 // ローカル対戦では選んだ2つで開始し、オンラインでは自分のデッキで相手を探す
 function confirmSelect() {
   const mine = deckByRef(state.choice.b);
@@ -1167,13 +1159,7 @@ function confirmSelect() {
     const ref = state.choice[choiceSlot('w')];
     const theirs = ref === 'random' ? STARTERS[Math.floor(Math.random() * STARTERS.length)] : deckByRef(ref);
     if (!theirs || deckError(theirs.deck)) return;
-    if (state.mode === 'cpu') {
-      const policy = $('cpu-policy').value;
-      const depth = $('cpu-depth');
-      if (policy === 'cnn-experiment' && !depth.reportValidity()) return;
-      state.cpuPolicy = policy;
-      if (policy === 'cnn-experiment') state.cpuDepth = depth.valueAsNumber;
-    }
+    if (state.mode === 'cpu') state.cpuPolicy = $('cpu-policy').value;
     state.decks = { b: mine.deck, w: theirs.deck };
     state.deckNames = { b: mine.name, w: theirs.name };
     startGame();
@@ -1492,18 +1478,11 @@ async function maybeCpuMove() {
   state.cpuThinking = true;
   $(`panel-${state.turn}`).classList.add('is-thinking');
   await sleep(CPU_DELAY_MS);
-  let move;
-  const attention = state.cpuPolicy === 'cnn-practice' ? window.cnnPracticeModel : window.cnnModel;
-  if (['cnn', 'cnn-experiment', 'cnn-practice'].includes(state.cpuPolicy) && attention) {
-    const knownBag = state.cpuPolicy === 'cnn-experiment';
-    move = window.CNN.attentionMove(attention, window.aviWeights, {
-      plies: knownBag ? state.cpuDepth : 2, knownBag,
+  const move = state.cpuPolicy === 'minimax'
+    ? AI.chooseMove({ depth: 2 })
+    : window.CNN.attentionMove(window.cnnPracticeModel, window.aviWeights, {
+      plies: state.cpuPolicy === 'attention-1' ? 1 : 2,
     });
-  } else if (state.cpuPolicy === 'avi' && window.aviWeights) {
-    move = window.AVI.chooseMove(window.aviWeights);
-  } else {
-    move = AI.chooseMove({ depth: 2 });
-  }
   $(`panel-${state.turn}`).classList.remove('is-thinking');
   state.busy = false;
   state.cpuThinking = false;
@@ -2187,7 +2166,6 @@ function init() {
   $('decks-btn').addEventListener('click', () => { if (state.phase === 'play' && !window.confirm('対局の途中です。デッキの画面に行きますか？')) return; startSelect('manage'); });
   $('select-cols').addEventListener('click', onSelectClick);
   $('select-cols').addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.sel-card[role=button]')) { e.preventDefault(); onSelectClick(e); } });
-  $('cpu-policy').addEventListener('change', updateCpuDepthField);
   $('select-go').addEventListener('click', confirmSelect);
   $('deck-import').addEventListener('click', openDeckImport);
   $('deck-copy-local').addEventListener('click', duplicateDeck);
