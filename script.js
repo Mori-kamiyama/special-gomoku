@@ -1480,9 +1480,7 @@ async function maybeCpuMove() {
   await sleep(CPU_DELAY_MS);
   const move = state.cpuPolicy === 'minimax'
     ? AI.chooseMove({ depth: 2 })
-    : window.CNN.attentionMove(window.cnnPracticeModel, window.aviWeights, {
-      plies: state.cpuPolicy === 'attention-1' ? 1 : 2,
-    });
+    : window.CNN.attentionMove(window.cnnPracticeModel, window.aviWeights, { plies: 2 });
   $(`panel-${state.turn}`).classList.remove('is-thinking');
   state.busy = false;
   state.cpuThinking = false;
